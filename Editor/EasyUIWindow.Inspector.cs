@@ -6,7 +6,7 @@ namespace EasyUI
     // The floating panel in the top-right corner, like Shader Graph's Graph Inspector: shown while an element is
     // selected. Every element has a Rect Transform, then the components of its kind (see EasyUIWindow.Elements.cs);
     // the round "+" adds components - Content Size Fitter, Canvas Group, a Horizontal / Vertical / Grid Layout
-    // Group (one at most), Layout Element - each removed again with the cross in its header. Every section folds
+    // Group (one at most), Layout Element, Mask, Rect Mask 2D - each removed again with the cross in its header. Every section folds
     // away from its header; the panel keeps a fixed largest height and scrolls past it.
     internal sealed partial class EasyUIWindow
     {
@@ -140,11 +140,26 @@ namespace EasyUI
             EditorGUIUtility.wideMode = true;
 
             GUILayout.Label(NameOf(node), PanelTitleStyle);
-            GUILayout.Label($"{EasyUINode.DisplayName(node.type)}  -  layer {document.DepthOf(node)}", EditorStyles.miniLabel);
+            GUILayout.Label(Subtitle(node), EditorStyles.miniLabel);
+            DrawRoleRow(node);
+            DrawPartsRow(node);
 
             if (Section("Rect Transform", ref node.rectTransformOpen))
             {
-                DrawRectTransformSection(node);
+                if (node.IsPart && EasyUIParts.IsDriven(node.part))
+                {
+                    EditorGUILayout.HelpBox("Sized by its Scrollbar at runtime.", MessageType.None);
+                }
+                else
+                {
+                    var driven = DrivenBy(node);
+                    if (driven != null)
+                    {
+                        EditorGUILayout.LabelField(driven, EditorStyles.wordWrappedMiniLabel);
+                    }
+
+                    DrawRectTransformSection(node);
+                }
             }
 
             DrawElementSections(node);
@@ -171,6 +186,167 @@ namespace EasyUI
                 DrawBorder(area, PanelBorderColor, 1f);
                 _panelRect = area;
             }
+        }
+
+        // What sets the element's rect besides you (see EasyUIWindow.Layout.cs), or null: changing it by hand
+        // doesn't stick, as in Unity.
+        private string DrivenBy(EasyUINode node)
+        {
+            string text = null;
+            var parent = document.Find(node.parentId);
+            if (parent != null && parent.layoutGroup.enabled && !(node.layoutElement.enabled && node.layoutElement.ignoreLayout))
+            {
+                text = $"Placed by {NameOf(parent)}'s {parent.layoutGroup.kind} Layout Group.";
+            }
+
+            var fitter = node.contentSizeFitter;
+            if (fitter.enabled && (fitter.horizontalFit != FitMode.Unconstrained || fitter.verticalFit != FitMode.Unconstrained))
+            {
+                text = (text != null ? text + " " : string.Empty) + "Sized by its Content Size Fitter.";
+            }
+
+            return text;
+        }
+
+        // "Image  -  layer 2", or for a part "Viewport of Scroll View  -  layer 2".
+        private string Subtitle(EasyUINode node)
+        {
+            var kind = node.IsPart
+                ? $"{EasyUIParts.DisplayName(node.part)} of {NameOf(EasyUIParts.OwnerOf(document, node))}"
+                : EasyUINode.DisplayName(node.type);
+            return $"{kind}  -  layer {document.DepthOf(node)}";
+        }
+
+        // What the element is to another system (see EasyUIRoles.cs): a menu of the roles that fit its type only -
+        // text roles on a Text, image roles on an Image... - and Add Role..., which makes a role of your own from a
+        // script. A unique role is held by one element at most, so picking it here takes it from any other.
+        private void DrawRoleRow(EasyUINode node)
+        {
+            GUILayout.Space(4f);
+            var role = EasyUIRoles.Find(node.role);
+            var row = EditorGUILayout.GetControlRect();
+            var field = EditorGUI.PrefixLabel(row, new GUIContent("Role", "What this element is to another system, e.g. the inventory's slot template."));
+            var label = role != null ? role.Label : string.IsNullOrEmpty(node.role) ? "None" : $"Missing ({node.role})";
+            if (EditorGUI.DropdownButton(field, new GUIContent(label, role != null ? role.MenuPath : null), FocusType.Passive))
+            {
+                ShowRoleMenu(node, field);
+            }
+
+            if (role != null && !string.IsNullOrEmpty(role.Description))
+            {
+                EditorGUILayout.LabelField(role.Description, EditorStyles.wordWrappedMiniLabel);
+            }
+        }
+
+        // None and Add Role... first, then the systems' roles that fit the element, then your own (see
+        // EasyUICustomRoles.cs), which fit every element.
+        private void ShowRoleMenu(EasyUINode node, Rect field)
+        {
+            var id = node.id;
+            var screen = GUIUtility.GUIToScreenRect(field);
+            var menu = new GenericMenu();
+            menu.AddItem(new GUIContent("None"), string.IsNullOrEmpty(node.role), () => SetRole(id, string.Empty));
+            menu.AddItem(new GUIContent("Add Role..."), false, () => EasyUIAddRoleWindow.Open(screen, roleId => SetRole(id, roleId)));
+
+            var separated = false;
+            foreach (var custom in new[] { false, true })
+            {
+                separated = false;
+                foreach (var role in EasyUIRoles.All)
+                {
+                    if (EasyUICustomRoles.IsCustom(role.Id) != custom || !role.Fits(node.type))
+                    {
+                        continue;
+                    }
+
+                    if (!separated)
+                    {
+                        menu.AddSeparator(string.Empty);
+                        separated = true;
+                    }
+
+                    var roleId = role.Id;
+                    var holder = role.Unique ? EasyUIRoles.FindNode(document, roleId) : null;
+                    var title = holder != null && holder != node ? $"{role.MenuPath}  (on {NameOf(holder)})" : role.MenuPath;
+                    menu.AddItem(new GUIContent(title), node.role == roleId, () => SetRole(id, roleId));
+                }
+            }
+
+            menu.DropDown(field);
+        }
+
+        private void SetRole(int id, string roleId)
+        {
+            var node = document.Find(id);
+            if (node == null)
+            {
+                return;
+            }
+
+            var role = EasyUIRoles.Find(roleId);
+            if (role != null && role.Unique)
+            {
+                foreach (var other in document.nodes)
+                {
+                    if (other.role == roleId)
+                    {
+                        other.role = string.Empty;
+                    }
+                }
+            }
+
+            node.role = roleId;
+            Repaint();
+        }
+
+        // On a composite element or one of its parts: a menu of the element and every part of it, to select one
+        // without clicking down to it.
+        private void DrawPartsRow(EasyUINode node)
+        {
+            var owner = EasyUIParts.OwnerOf(document, node);
+            if (!EasyUIParts.IsComposite(owner.type))
+            {
+                return;
+            }
+
+            GUILayout.Space(2f);
+            var row = EditorGUILayout.GetControlRect();
+            var field = EditorGUI.PrefixLabel(row, new GUIContent("Parts", "Select a part of this element. Clicking the selected element again also goes one part deeper."));
+            var shown = node.IsPart ? EasyUIParts.DisplayName(node.part) : "Select a part";
+            if (!EditorGUI.DropdownButton(field, new GUIContent(shown), FocusType.Passive))
+            {
+                return;
+            }
+
+            var menu = new GenericMenu();
+            var ownerId = owner.id;
+            menu.AddItem(new GUIContent($"{NameOf(owner)} (the element)"), node == owner, () => SelectFromPanel(ownerId));
+            menu.AddSeparator(string.Empty);
+            AddPartItems(menu, owner, string.Empty, node);
+            menu.DropDown(field);
+        }
+
+        private void AddPartItems(GenericMenu menu, EasyUINode parent, string path, EasyUINode current)
+        {
+            foreach (var child in document.nodes)
+            {
+                if (child.parentId != parent.id || !child.IsPart)
+                {
+                    continue;
+                }
+
+                var id = child.id;
+                var title = path + EasyUIParts.DisplayName(child.part);
+                menu.AddItem(new GUIContent(title), child == current, () => SelectFromPanel(id));
+                AddPartItems(menu, child, title + " > ", current);
+            }
+        }
+
+        private void SelectFromPanel(int id)
+        {
+            ConfirmRename();
+            SelectOnly(id);
+            Repaint();
         }
 
         // A section's header: its title with an arrow - down while open, right while folded - and a line under
@@ -233,30 +409,29 @@ namespace EasyUI
 
             if (EditorGUI.EndChangeCheck())
             {
-                // The size is settled (never below the smallest) before the position is worked out from it, so
-                // the pivot stays exactly where Pos X / Pos Y put it - also while a new size is being typed digit
-                // by digit, through values too small to use.
+                // The size is settled (never below 0) before the position is worked out from it, so the pivot
+                // stays exactly where Pos X / Pos Y put it - also while a new size is being typed digit by digit.
                 float xMin, width, yMin, height;
                 if (stretchX)
                 {
                     xMin = parent.xMin + x1;
-                    width = Mathf.Max(parent.xMax - x2 - xMin, MinElementSize);
+                    width = Mathf.Max(parent.xMax - x2 - xMin, 0f);
                 }
                 else
                 {
-                    width = Mathf.Max(x2, MinElementSize);
+                    width = Mathf.Max(x2, 0f);
                     xMin = anchorX + x1 - width * node.pivot.x;
                 }
 
                 if (stretchY)
                 {
                     yMin = parent.yMin + y1;
-                    height = Mathf.Max(parent.yMax - y2 - yMin, MinElementSize);
+                    height = Mathf.Max(parent.yMax - y2 - yMin, 0f);
                 }
                 else
                 {
                     // A new height grows around the pivot.
-                    height = Mathf.Max(y2, MinElementSize);
+                    height = Mathf.Max(y2, 0f);
                     yMin = parent.yMax - (y1 + anchorUp) - height * (1f - node.pivot.y);
                 }
 
@@ -365,10 +540,59 @@ namespace EasyUI
         }
 
         // A small label above its field, as a RectTransform's Inspector lays out Pos X, Width and the like.
+        // The label is a drag handle, as a label beside a number field is in Unity's Inspector: press on it and
+        // drag left or right to change the value.
         private static float LabeledFloat(Rect rect, string label, float value)
         {
-            GUI.Label(new Rect(rect.x, rect.y, rect.width, 14f), label, EditorStyles.miniLabel);
+            var labelRect = new Rect(rect.x, rect.y, rect.width, 14f);
+            GUI.Label(labelRect, label, EditorStyles.miniLabel);
+            value = DragValue(labelRect, value);
             return EditorGUI.FloatField(new Rect(rect.x, rect.y + 14f, rect.width, 18f), value);
+        }
+
+        // Unity's drag sensitivity for a float: faster for larger values; Shift four times faster, Alt four
+        // times slower. Rounded to the step, so dragging gives tidy numbers.
+        private static float DragValue(Rect area, float value)
+        {
+            var id = GUIUtility.GetControlID(FocusType.Passive, area);
+            var e = Event.current;
+            EditorGUIUtility.AddCursorRect(area, MouseCursor.SlideArrow);
+
+            switch (e.GetTypeForControl(id))
+            {
+                case EventType.MouseDown when e.button == 0 && area.Contains(e.mousePosition):
+                    GUIUtility.hotControl = id;
+                    GUIUtility.keyboardControl = 0;
+                    EditorGUIUtility.editingTextField = false;
+                    e.Use();
+                    break;
+
+                case EventType.MouseDrag when GUIUtility.hotControl == id:
+                    var step = Mathf.Max(1f, Mathf.Sqrt(Mathf.Abs(value))) * 0.03f;
+                    if (e.shift)
+                    {
+                        step *= 4f;
+                    }
+
+                    if (e.alt)
+                    {
+                        step *= 0.25f;
+                    }
+
+                    value += HandleUtility.niceMouseDelta * step;
+                    value = Mathf.Round(value / step) * step;
+                    value = Mathf.Round(value * 1000f) / 1000f;
+                    GUI.changed = true;
+                    e.Use();
+                    break;
+
+                case EventType.MouseUp when GUIUtility.hotControl == id:
+                    GUIUtility.hotControl = 0;
+                    e.Use();
+                    break;
+            }
+
+            return value;
         }
 
         #endregion
@@ -407,13 +631,22 @@ namespace EasyUI
             scroll.scrollSensitivity = EditorGUILayout.FloatField("Scroll Sensitivity", scroll.scrollSensitivity);
             GUILayout.Space(RowGap + 4f);
 
+            var horizontal = scroll.horizontalScrollbar;
+            var vertical = scroll.verticalScrollbar;
             DrawScrollbar("Horizontal Scrollbar", ref scroll.horizontalScrollbar, ref scroll.horizontalScrollbarVisibility,
                 ref scroll.horizontalScrollbarSpacing);
             DrawScrollbar("Vertical Scrollbar", ref scroll.verticalScrollbar, ref scroll.verticalScrollbarVisibility,
                 ref scroll.verticalScrollbarSpacing);
+
+            // A scrollbar ticked or unticked: its part comes or goes with it.
+            if (horizontal != scroll.horizontalScrollbar || vertical != scroll.verticalScrollbar)
+            {
+                EasyUIParts.EnsureParts(document, node);
+                PruneSelection();
+            }
         }
 
-        // A scrollbar is built when ticked; its Visibility and Spacing, as in the Scroll Rect's Inspector.
+        // A scrollbar exists (as a part) while ticked; its Visibility and Spacing, as in the Scroll Rect's Inspector.
         private static void DrawScrollbar(string label, ref bool shown, ref ScrollbarVisibility visibility, ref float spacing)
         {
             ToggleRow(label, ref shown);
@@ -499,6 +732,52 @@ namespace EasyUI
                     GUILayout.Space(RowGap);
                 }
             }
+
+            var mask = node.mask;
+            if (mask.enabled)
+            {
+                var open = Section("Mask", ref mask.open, true, out var removed);
+                mask.enabled = !removed;
+                if (open)
+                {
+                    ToggleRow("Show Mask Graphic", ref mask.showMaskGraphic);
+                }
+            }
+
+            var rectMask = node.rectMask2D;
+            if (rectMask.enabled)
+            {
+                var open = Section("Rect Mask 2D", ref rectMask.open, true, out var removed);
+                rectMask.enabled = !removed;
+                if (open)
+                {
+                    DrawRectMask2D(rectMask);
+                }
+            }
+        }
+
+        // Padding (kept as uGUI does: x left, y bottom, z right, w top), then Softness.
+        private static void DrawRectMask2D(RectMask2DSettings mask)
+        {
+            mask.paddingOpen = EditorGUILayout.Foldout(mask.paddingOpen, "Padding", true);
+            GUILayout.Space(RowGap);
+            if (mask.paddingOpen)
+            {
+                using (new EditorGUI.IndentLevelScope())
+                {
+                    mask.padding.x = EditorGUILayout.FloatField("Left", mask.padding.x);
+                    GUILayout.Space(RowGap);
+                    mask.padding.z = EditorGUILayout.FloatField("Right", mask.padding.z);
+                    GUILayout.Space(RowGap);
+                    mask.padding.w = EditorGUILayout.FloatField("Top", mask.padding.w);
+                    GUILayout.Space(RowGap);
+                    mask.padding.y = EditorGUILayout.FloatField("Bottom", mask.padding.y);
+                    GUILayout.Space(RowGap);
+                }
+            }
+
+            mask.softness = Vector2Int.Max(EditorGUILayout.Vector2IntField("Softness", mask.softness), Vector2Int.zero);
+            GUILayout.Space(RowGap);
         }
 
         private void DrawLayoutGroup(LayoutGroupSettings layout)
@@ -594,6 +873,18 @@ namespace EasyUI
             {
                 node.layoutElement.enabled = true;
                 node.layoutElement.open = true;
+            });
+
+            menu.AddSeparator(string.Empty);
+            AddComponentItem(menu, "Mask", node.mask.enabled, () =>
+            {
+                node.mask.enabled = true;
+                node.mask.open = true;
+            });
+            AddComponentItem(menu, "Rect Mask 2D", node.rectMask2D.enabled, () =>
+            {
+                node.rectMask2D.enabled = true;
+                node.rectMask2D.open = true;
             });
 
             menu.DropDown(button);

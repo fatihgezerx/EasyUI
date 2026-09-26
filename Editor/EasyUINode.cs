@@ -18,6 +18,13 @@ namespace EasyUI
         public string name = string.Empty;
         public EasyUIElementType type;
 
+        // A built-in piece of its composite parent (Viewport, Content, a Toggle's Label...), made and kept by
+        // EasyUIParts; None for an element added by hand.
+        public EasyUIPart part;
+
+        // What the element is to another system (e.g. an inventory's slot template), from EasyUIRoles; empty for none.
+        public string role = string.Empty;
+
         public Vector2 position;
         public Vector2 size;
         public Vector2 pivot = new(0.5f, 0.5f);
@@ -46,8 +53,12 @@ namespace EasyUI
         public CanvasGroupSettings canvasGroup = new();
         public LayoutGroupSettings layoutGroup = new();
         public LayoutElementSettings layoutElement = new();
+        public MaskSettings mask = new();
+        public RectMask2DSettings rectMask2D = new();
 
         public Rect Rect => new(position, size);
+
+        public bool IsPart => part != EasyUIPart.None;
 
         /// <summary>uGUI's default size for a new <paramref name="type"/>, as its GameObject > UI menu makes it.</summary>
         public static Vector2 DefaultSize(EasyUIElementType type) => type switch

@@ -10,6 +10,8 @@ namespace EasyUI
     //   Empty: none.  Text: Text.  Image: Image.  Raw Image: Raw Image.
     //   Button: Image (its background) and Button.  Toggle: Toggle.  Slider: Slider.
     //   Dropdown: Image and Dropdown.  Input Field: Image and Input Field.  Scroll View: Scroll View.
+    // The texts and images inside a Button, Toggle, Dropdown or Scroll View are parts of their own (see
+    // EasyUIParts.cs), each with its own Text or Image section.
     // Every control's section starts with what all controls share (Interactable, Transition and its colors,
     // sprites or triggers).
     internal sealed partial class EasyUIWindow
@@ -43,7 +45,6 @@ namespace EasyUI
                     if (Section("Button", ref node.button.open))
                     {
                         DrawSelectable(node.selectable);
-                        node.button.label = TextRow("Text", node.button.label);
                     }
 
                     break;
@@ -54,7 +55,6 @@ namespace EasyUI
                         DrawSelectable(node.selectable);
                         ToggleRow("Is On", ref node.toggle.isOn);
                         node.toggle.toggleTransition = (Toggle.ToggleTransition)EnumRow("Toggle Transition", node.toggle.toggleTransition);
-                        node.toggle.label = TextRow("Text", node.toggle.label);
                     }
 
                     break;

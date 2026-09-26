@@ -24,9 +24,13 @@ builds.
   Button, Toggle, Slider, Dropdown, Input Field, Scroll View
 - Unity's default size, sprites and settings for every element, as `GameObject > UI` makes it
 - Rect Transform editing like Unity's: anchor presets (Shift sets the pivot, Alt moves the element),
-  Pos X / Y, Width / Height or Left / Right / Top / Bottom, pivot
+  Pos X / Y, Width / Height or Left / Right / Top / Bottom, pivot - each field changed by dragging its label
+  left or right too (Shift faster, Alt finer)
 - Optional components from the round **+**: Content Size Fitter, Canvas Group, Horizontal / Vertical / Grid
-  Layout Group (one at most), Layout Element
+  Layout Group (one at most), Layout Element, Mask, Rect Mask 2D
+- Parts: a Scroll View's Viewport, Content and scrollbars, a Button's Text, a Toggle's Background, Checkmark
+  and Label, and a Dropdown's Label and Arrow are elements of their own, to style and extend
+- Roles: other systems (e.g. Inventory System) can offer roles, so they find your elements without names
 - Layers: an element's layer is how deep it sits, and elements on the same layer can't overlap
 - Smart guides that pull edges and middles onto lined-up elements, and Shift to snap to the canvas grid
 - Multi-selection, box selection, duplicate (Ctrl + D) and delete, with children
@@ -42,6 +46,7 @@ builds.
 |---|---|
 | Add an element | Right-click |
 | Select | Click |
+| Select what is inside (a child, a part) | Click the selected element again |
 | Add to / remove from the selection | Ctrl + click |
 | Select with a box | Drag on an empty spot |
 | Move the selection | Drag a selected element |
@@ -61,6 +66,15 @@ for its name right away. Enter or the check button keeps the name, Escape leaves
 press on an element only selects it, so an element never moves by accident. A drag always starts from a
 selected element.
 
+Clicks go down through elements one level at a time: the first click picks the outermost element under the
+pointer, and each click on the selected element picks what is inside it there (a child, or a part). With
+nothing deeper there, the next click goes back to the outermost element. A drag on the selected element
+still moves it, even where a child covers it. The siblings of the selection, and of its parents, are one
+click away.
+
+Labels never lie on top of each other: where two would, the selected element's shows, otherwise the outer
+element's.
+
 Selected elements are green. The element clicked last is the one the inspector shows and the one resized
 by its edges.
 
@@ -73,6 +87,10 @@ Elements on different layers overlap freely, since a child sits inside its paren
 layer may not: a drag or a resize stops where it would run into another one, and both show yellow edges
 while it presses against it. An element that overlaps one on its layer anyway (e.g. placed there from the
 Rect Transform fields) turns red.
+
+An element with a **Layout Element** whose **Ignore Layout** is ticked is out of this rule: it may lie over
+the others on its layer - e.g. a background image stretched under the children of a layout group - and never
+stops a drag. It still stays inside its parent.
 
 ## Parents and children
 
@@ -114,6 +132,81 @@ Every control starts with what all controls share: Interactable and its Transiti
 animation triggers). The round **+** under the components adds optional ones, each removed again with the
 cross in its header. Every section folds away from its header.
 
+A **Mask** needs a graphic to clip to: an element without one (e.g. Empty) gets a plain Image for it when
+built. A **Rect Mask 2D** clips to the element's rect, with Padding and Softness.
+
+## Layout in the workspace
+
+Layout components work in the workspace as they will in the game, worked out the way uGUI works them out:
+
+- A **Content Size Fitter** sizes its element (around its pivot) to its min or preferred size, e.g. a
+  Content with a Horizontal Layout Group grows with its children.
+- A **Horizontal / Vertical Layout Group** places its children one after another, with its padding,
+  spacing, child alignment and reverse arrangement; with **Control Child Size** it sizes them too, using
+  **Child Force Expand** and their Layout Elements' flexible sizes to share out spare room.
+- A **Grid Layout Group** puts every child in a cell of its Cell Size, by its start corner, start axis and
+  constraint.
+- A **Layout Element** gives an element's min, preferred and flexible sizes (or keeps it out of layout
+  with Ignore Layout).
+
+An element a layout group places, or a fitter sizes, snaps back if it is dragged or its fields are changed:
+its Rect Transform is driven, as in Unity, and the inspector says by what. Preferred sizes are uGUI's: a
+Layout Element's, a layout group's, an Image's sprite size, a Raw Image's texture size. A text keeps its
+current size, since uGUI measures its text and the workspace can't.
+
+## Parts
+
+Unity builds a Scroll View, Button, Toggle or Dropdown out of several objects. In EasyUI those objects are
+**parts**: elements of their own, made with their element and laid out as Unity lays them out.
+
+| Element | Parts |
+|---|---|
+| Scroll View | Viewport > Content, Scrollbar Horizontal > Handle, Scrollbar Vertical > Handle |
+| Button | Text |
+| Toggle | Background > Checkmark, Label |
+| Dropdown | Label, Arrow |
+
+A part can be selected, renamed, restyled (its Image or Text section), given components with **+** and
+children of its own - e.g. a Grid Layout Group and slots in a Scroll View's Content. It goes with its
+element: it can't be dragged, resized on the canvas, duplicated or deleted on its own, and the layer rules
+leave it out (a scrollbar sits over its Viewport, a Content may be taller than it). Its Rect Transform is
+still edited in the inspector, except a scrollbar's Handle, which its Scrollbar sizes at runtime.
+
+An element looks like one piece until it is selected; then its parts show as thin outlines. To select a
+part, click the selected element again, as for a child: each click goes one part deeper (Scroll View, then
+Viewport, then Content). The **Parts** menu in the inspector selects any part directly. A Scroll View's scrollbars exist
+while they are ticked in its settings, and elements added under a Scroll View go into its Content.
+
+Panels saved before parts existed get theirs the first time they are opened or built: a Button's text
+becomes its Text part, and what was under a Scroll View moves into its Content.
+
+## Roles
+
+Another system can tell EasyUI what it needs from a panel by offering **roles**, e.g. Inventory System's
+*Slot Container* or *Examine View*, listed under the system's name (*Inventory*). The inspector then shows a
+**Role** menu at the top: pick what the
+selected element is to that system. The menu lists only the roles that fit the element's type (a text's
+roles on a Text, an image's on an Image...), plus your own roles (below). The role shows in
+brackets after the element's name. Most roles are held by one element at most, so giving one to another
+takes it from the first; a system may offer roles several elements share, telling them apart by where they
+are (e.g. Inventory System's *Item Icon*: in a slot, in a notification, or on its own).
+
+The system then builds the panel and finds its elements by role, never by name, so they can be named
+freely. EasyUI never references those systems: they implement `IEasyUIRoleProvider`, and build with
+`EasyUIPanelBuilder.Build`, which returns every element's object by its id.
+
+### Roles of your own
+
+**Add Role...**, right under None in the Role menu, makes a role from a script: pick the script (a
+MonoBehaviour), optionally a **Group**, and press **Apply**. The role is named after the script's class,
+given to the element, and listed in the Role menu of every element from then on (they are kept per project,
+in `ProjectSettings/EasyUIRoles.asset`). A group is a submenu of the Role menu: type a new one, or pick one
+there is (a system's, e.g. *Inventory*, or yours) from the button beside the field. A name typed like an
+existing group, whatever its case, is that group - there is never a second one of the same name. When the panel is built, an element with it gets that script as a
+component. Several elements can share one, and the same window lists the roles made so far, to remove
+them. So a system of your own - an inventory you wrote yourself, say - can mark its elements without any
+code for EasyUI.
+
 ## Saving
 
 The top bar holds the panel's name and four buttons:
@@ -138,11 +231,9 @@ right-click menu), named after its asset. Choosing one builds the panel:
   Input System).
 - as an object stretched over its parent, with every element under it. Each element is made the way
   Unity's own **UI (Canvas)** menu makes its kind, then set up as designed: anchors, pivot, its components'
-  settings and the components added to it. Toggle labels are TextMeshPro, like every other text.
+  settings and the components added to it. Its parts are the objects Unity made for them, set up the same
+  way. Toggle labels are TextMeshPro, like every other text.
 - in one undo step.
-
-A Scroll View's children go into its Content, which starts as large as the view. Its Content Size Fitter
-and Layout Group go on the Content too, since that is what they size and lay out.
 
 The built objects keep no link to the panel asset: from then on they are the scene's own, so add your
 scripts and change them freely. Saving the panel again doesn't touch objects already built.

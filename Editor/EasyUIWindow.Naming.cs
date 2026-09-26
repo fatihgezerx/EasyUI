@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
@@ -26,6 +27,10 @@ namespace EasyUI
 
         private readonly GUIContent _measure = new();
         private static readonly string[] LayerTexts = new string[64];
+
+        // The elements whose label is drawn in this event (see UpdateLabels), and the labels taken so far.
+        private readonly HashSet<int> _labeled = new();
+        private readonly List<Rect> _takenLabels = new();
 
         private Texture2D _badgeTexture;
         private Texture2D _fadeTexture;
@@ -123,6 +128,67 @@ namespace EasyUI
             return LayerTexts[depth] ??= depth.ToString();
         }
 
+        #region Which labels show
+
+        // Labels never lie on top of each other: where two would, one shows and the other hides (with its pencil).
+        // The selected element's (and the one being renamed) always shows; among the rest, an element's wins over
+        // its children's, and an earlier sibling's over a later one's - so with nothing selected a parent keeps its
+        // label, and selecting a child brings the child's forward. Parts only show theirs while selected. Worked out
+        // once per event, before input and drawing use it.
+        private void UpdateLabels()
+        {
+            _labeled.Clear();
+            _takenLabels.Clear();
+
+            var order = DrawOrder();
+            foreach (var node in order)
+            {
+                if (IsSelected(node) || node.id == _renamingId)
+                {
+                    TakeLabel(node, true);
+                }
+            }
+
+            foreach (var node in order)
+            {
+                if (!node.IsPart && !_labeled.Contains(node.id))
+                {
+                    TakeLabel(node, false);
+                }
+            }
+        }
+
+        private void TakeLabel(EasyUINode node, bool always)
+        {
+            var extent = LabelExtent(node);
+            if (!always)
+            {
+                foreach (var taken in _takenLabels)
+                {
+                    if (taken.Overlaps(extent))
+                    {
+                        return;
+                    }
+                }
+            }
+
+            _labeled.Add(node.id);
+            _takenLabels.Add(extent);
+        }
+
+        // Whether the element's label (layer badge, name, pencil) is drawn in this event.
+        private bool HasLabel(EasyUINode node) => _labeled.Contains(node.id);
+
+        // What the label actually covers: its badge, its text and its pencil - not the whole width of the element.
+        private Rect LabelExtent(EasyUINode node)
+        {
+            var label = LabelRect(ToScreen(node.Rect));
+            var width = BadgeSize + BadgeGap + NameWidth(LabelText(node, Problem(node)), LabelStyle) + 4f + PencilSize;
+            return new Rect(label.x, label.y, Mathf.Min(label.width, width), label.height);
+        }
+
+        #endregion
+
         #region Layout
 
         // The label's row, as wide as the element (with room for the badge and the pencil at least): above its
@@ -165,7 +231,7 @@ namespace EasyUI
             var order = DrawOrder();
             for (var i = order.Count - 1; i >= 0; i--)
             {
-                if (order[i].id != _renamingId && PencilRect(order[i]).Contains(pointer))
+                if (order[i].id != _renamingId && HasLabel(order[i]) && PencilRect(order[i]).Contains(pointer))
                 {
                     return order[i];
                 }
@@ -174,8 +240,13 @@ namespace EasyUI
             return null;
         }
 
-        private string LabelText(EasyUINode node, string problem) =>
-            problem != null ? $"{NameOf(node)}  -  {problem}" : NameOf(node);
+        // The name, then the role in brackets, then what is wrong.
+        private string LabelText(EasyUINode node, string problem)
+        {
+            var role = EasyUIRoles.Find(node.role);
+            var text = role != null ? $"{NameOf(node)}  [{role.Label}]" : NameOf(node);
+            return problem != null ? $"{text}  -  {problem}" : text;
+        }
 
         #endregion
 

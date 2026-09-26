@@ -92,6 +92,7 @@ namespace EasyUI
         private void OpenPanel(EasyUIPanel panel)
         {
             document = panel.Document.Clone();
+            EasyUIParts.EnsureParts(document);
             openedAsset = panel;
             ResetSelection();
         }

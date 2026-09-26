@@ -72,6 +72,7 @@ namespace EasyUI
     public sealed class ButtonSettings
     {
         public bool open = true;
+        // Only read once, to seed the Text part of a Button saved before parts existed.
         public string label = "Button";
     }
 
@@ -81,6 +82,7 @@ namespace EasyUI
         public bool open = true;
         public bool isOn = true;
         public Toggle.ToggleTransition toggleTransition = Toggle.ToggleTransition.Fade;
+        // Only read once, to seed the Label part of a Toggle saved before parts existed.
         public string label = "Toggle";
     }
 

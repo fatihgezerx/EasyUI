@@ -36,6 +36,10 @@ namespace EasyUI
         private readonly Dictionary<int, Rect> _moveStarts = new();
         private int _leadId;
         private int _pressedId;
+
+        // A press inside a selected element, on something in it: a click without a drag selects that (one level
+        // deeper), a drag moves the selected element.
+        private int _drillId;
         private bool _moved;
 
         #region Selection
@@ -90,13 +94,14 @@ namespace EasyUI
             }
         }
 
-        // Whether the element is selected or somewhere under a selected one.
+        // Whether the element is selected or somewhere under a selected one. A selected part doesn't count: it
+        // takes nothing along.
         private bool IsUnderSelection(EasyUINode node)
         {
             foreach (var id in _selected)
             {
                 var selected = document.Find(id);
-                if (selected != null && document.IsUnder(node, selected))
+                if (selected != null && !selected.IsPart && document.IsUnder(node, selected))
                 {
                     return true;
                 }
@@ -106,12 +111,12 @@ namespace EasyUI
         }
 
         // The selected elements whose parents aren't selected: the ones a move or a delete acts on (their
-        // children come along).
+        // children come along). Parts never are: they only go with their element.
         private IEnumerable<EasyUINode> SelectionRoots()
         {
             foreach (var node in document.nodes)
             {
-                if (!IsSelected(node))
+                if (!IsSelected(node) || node.IsPart)
                 {
                     continue;
                 }
@@ -171,7 +176,7 @@ namespace EasyUI
             _selected.UnionWith(_marqueeBase);
             foreach (var node in document.nodes)
             {
-                if (Overlaps(box, node.Rect))
+                if (!node.IsPart && Overlaps(box, node.Rect))
                 {
                     _selected.Add(node.id);
                 }
@@ -405,7 +410,7 @@ namespace EasyUI
             if (child.anchorH == HorizontalAnchor.Stretch)
             {
                 xMin = to.xMin + (rect.xMin - from.xMin);
-                xMax = Mathf.Max(to.xMax - (from.xMax - rect.xMax), xMin + MinElementSize);
+                xMax = Mathf.Max(to.xMax - (from.xMax - rect.xMax), xMin);
             }
             else
             {
@@ -419,7 +424,7 @@ namespace EasyUI
             if (child.anchorV == VerticalAnchor.Stretch)
             {
                 yMin = to.yMin + (rect.yMin - from.yMin);
-                yMax = Mathf.Max(to.yMax - (from.yMax - rect.yMax), yMin + MinElementSize);
+                yMax = Mathf.Max(to.yMax - (from.yMax - rect.yMax), yMin);
             }
             else
             {

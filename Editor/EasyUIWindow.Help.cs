@@ -20,6 +20,7 @@ namespace EasyUI
         {
             ("Add an element", "Right-click"),
             ("Select", "Click"),
+            ("Select what is inside (a child, a part)", "Click the selected element"),
             ("Add to / remove from the selection", "Ctrl + click"),
             ("Select with a box", "Drag on an empty spot"),
             ("Move the selection", "Drag a selected element"),

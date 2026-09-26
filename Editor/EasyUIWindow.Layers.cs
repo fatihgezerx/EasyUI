@@ -8,7 +8,8 @@ namespace EasyUI
     // freely (a child sits inside its parent). On the same layer they may not: a drag or a resize stops where it
     // would run into another one, and both show yellow edges while it presses against it. An element that
     // overlaps one on its layer anyway (e.g. placed there from the Rect Transform fields) turns red: the one
-    // changed last.
+    // changed last. Parts, and elements whose Layout Element ignores layout, are out of this rule: they may lie
+    // over others on their layer (e.g. a background cell under a grid's slots).
     internal sealed partial class EasyUIWindow
     {
         // How far two rects must reach into each other to count as overlapping: touching edges don't.
@@ -16,6 +17,11 @@ namespace EasyUI
 
         // While a drag or a resize is held back by elements on its layer: those elements' ids.
         private readonly HashSet<int> _blockers = new();
+
+        // Out of the overlap rule: a part (Unity lays it out), or an element whose Layout Element ignores layout -
+        // it is placed by hand over the others on purpose, e.g. a background cell under the slots of a grid.
+        private static bool IsFreeToOverlap(EasyUINode node) =>
+            node.IsPart || (node.layoutElement.enabled && node.layoutElement.ignoreLayout);
 
         // Marks the element as changed just now.
         private void Touch(EasyUINode node) => node.editStamp = ++document.editCounter;
@@ -32,10 +38,16 @@ namespace EasyUI
         /// </summary>
         private bool IsInConflict(EasyUINode node, out EasyUINode with)
         {
+            with = null;
+            if (IsFreeToOverlap(node))
+            {
+                return false;
+            }
+
             var depth = document.DepthOf(node);
             foreach (var other in document.nodes)
             {
-                if (other == node || other.editStamp > node.editStamp || document.DepthOf(other) != depth)
+                if (other == node || IsFreeToOverlap(other) || other.editStamp > node.editStamp || document.DepthOf(other) != depth)
                 {
                     continue;
                 }
@@ -52,10 +64,12 @@ namespace EasyUI
         }
 
         // Another element on the same layer that `from` doesn't already overlap - so one caught overlapping can
-        // still be dragged out - and that isn't moving along with it.
+        // still be dragged out - and that isn't moving along with it. Elements free to overlap (parts, those
+        // ignoring layout) never block, nor are blocked.
         private bool IsObstacle(EasyUINode node, int depth, Rect from, EasyUINode other)
         {
-            return other != node && document.DepthOf(other) == depth && !Overlaps(from, other.Rect)
+            return other != node && !IsFreeToOverlap(node) && !IsFreeToOverlap(other) && document.DepthOf(other) == depth
+                   && !Overlaps(from, other.Rect)
                    && !(_drag == Drag.Move && IsSelected(other));
         }
 

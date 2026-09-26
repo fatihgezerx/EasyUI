@@ -12,26 +12,25 @@ namespace EasyUI
 {
     /// <summary>
     /// Builds a saved panel as plain uGUI objects: what <c>GameObject &gt; UI (Canvas) &gt; Easy UI &gt; &lt;Panel&gt;</c>
-    /// does (see <see cref="EasyUIMenuGenerator"/>).
+    /// does (see <see cref="EasyUIMenuGenerator"/>), and what other systems call to build a panel and then find
+    /// its elements by role (see <see cref="Build"/>).
     /// </summary>
     /// <remarks>
     /// The panel becomes an object stretched over its parent - the selected object when it is inside a canvas,
     /// otherwise the scene's canvas, made (with an EventSystem) if there is none - with every element under it.
     /// Each element is made the way Unity's own <c>GameObject &gt; UI (Canvas)</c> menu makes its kind, then set up
-    /// as it was designed: anchors, pivot, the settings of its components and the components added to it. The
+    /// as it was designed: anchors, pivot, the settings of its components and the components added to it. Parts
+    /// (a Scroll View's Viewport, a Button's Text...) are the objects Unity made for them, set up the same way. The
     /// objects keep no link to the panel asset; from then on they are the scene's own.
     /// </remarks>
-    internal static class EasyUIPanelBuilder
+    public static class EasyUIPanelBuilder
     {
         private const string SkinPath = "UI/Skin/";
 
         // For panels saved before the canvas's size was kept, when the parent has no size either.
         private static readonly Vector2 FallbackCanvasSize = new(1920f, 1080f);
 
-        // The label color of Unity's default controls.
-        private static readonly Color LabelColor = new(50f / 255f, 50f / 255f, 50f / 255f, 1f);
-
-        public static void Create(string guid, MenuCommand command)
+        internal static void Create(string guid, MenuCommand command)
         {
             var path = AssetDatabase.GUIDToAssetPath(guid);
             var panel = string.IsNullOrEmpty(path) ? null : AssetDatabase.LoadAssetAtPath<EasyUIPanel>(path);
@@ -46,15 +45,54 @@ namespace EasyUI
             Undo.IncrementCurrentGroup();
             Undo.SetCurrentGroupName(undoName);
 
-            var parent = ParentFor(command.context as GameObject);
-            var root = Build(panel.Document, panel.name, parent);
+            var root = Build(panel, ParentFor(command.context as GameObject), null);
             Undo.RegisterCreatedObjectUndo(root, undoName);
             Selection.activeGameObject = root;
         }
 
+        /// <summary>
+        /// Builds <paramref name="panel"/> under <paramref name="parent"/> and returns its root object, named after
+        /// the panel. When <paramref name="built"/> is given, it is filled with every element's object by the
+        /// element's id - parts included - so a caller can find elements by role
+        /// (<see cref="EasyUIRoles.FindNode"/>). Nothing is recorded for undo: the caller registers the root.
+        /// </summary>
+        public static GameObject Build(EasyUIPanel panel, RectTransform parent, Dictionary<int, GameObject> built)
+        {
+            // A copy, so a panel saved before parts existed gets them without the asset changing.
+            var document = panel.Document.Clone();
+            EasyUIParts.EnsureParts(document);
+            return Build(document, panel.name, parent, built ?? new Dictionary<int, GameObject>());
+        }
+
+        /// <summary>
+        /// Where a new panel goes: <paramref name="selected"/> (or the selected object) when it is inside a canvas,
+        /// otherwise the current scene's canvas - made, with an EventSystem, if there is none.
+        /// </summary>
+        public static RectTransform ParentFor(GameObject selected)
+        {
+            if (selected == null)
+            {
+                selected = Selection.activeGameObject;
+            }
+
+            if (selected != null && !EditorUtility.IsPersistent(selected) && selected.transform is RectTransform rect &&
+                selected.GetComponentInParent<Canvas>(true) != null)
+            {
+                return rect;
+            }
+
+            var canvas = FindCanvas();
+            if (canvas == null)
+            {
+                canvas = CreateCanvas();
+            }
+
+            return (RectTransform)canvas.transform;
+        }
+
         #region Hierarchy
 
-        private static GameObject Build(EasyUIDocument document, string name, RectTransform parent)
+        private static GameObject Build(EasyUIDocument document, string name, RectTransform parent, Dictionary<int, GameObject> built)
         {
             var designSize = document.canvasSize;
             if (designSize.x <= 0f || designSize.y <= 0f)
@@ -77,7 +115,7 @@ namespace EasyUI
             GameObjectUtility.EnsureUniqueNameForSibling(root);
 
             var ui = new ControlSprites();
-            BuildChildren(0, rootRect, new Rect(Vector2.zero, designSize), ChildrenByParent(document), ui);
+            BuildChildren(0, rootRect, new Rect(Vector2.zero, designSize), ChildrenByParent(document), ui, built);
 
             var layer = parent.gameObject.layer;
             foreach (var child in root.GetComponentsInChildren<Transform>(true))
@@ -115,9 +153,9 @@ namespace EasyUI
         }
 
         // `designParent` is the parent's rect in canvas units (top-left, y down): what the children's rects are
-        // measured against.
+        // measured against. A part isn't made: it is the object Unity made for it inside `into`.
         private static void BuildChildren(int parentId, RectTransform into, Rect designParent,
-            Dictionary<int, List<EasyUINode>> children, ControlSprites ui)
+            Dictionary<int, List<EasyUINode>> children, ControlSprites ui, Dictionary<int, GameObject> built)
         {
             if (!children.TryGetValue(parentId, out var list))
             {
@@ -126,16 +164,40 @@ namespace EasyUI
 
             foreach (var node in list)
             {
-                var element = CreateElement(node, ui, out var content);
-                var rect = (RectTransform)element.transform;
-                rect.SetParent(into, false);
-                element.name = string.IsNullOrEmpty(node.name) ? EasyUINode.DefaultName(node.type) : node.name;
-                Place(rect, node, designParent);
-                AddComponents(node, element, content);
+                GameObject element;
+                if (node.IsPart)
+                {
+                    element = PartObject(into.gameObject, node.part);
+                    if (element == null)
+                    {
+                        continue;
+                    }
 
-                BuildChildren(node.id, content != null ? content : rect, node.Rect, children, ui);
+                    ApplyPart(element, node);
+                }
+                else
+                {
+                    element = CreateElement(node, ui);
+                    ((RectTransform)element.transform).SetParent(into, false);
+                }
+
+                var rect = (RectTransform)element.transform;
+                element.name = string.IsNullOrEmpty(node.name) ? DefaultName(node) : node.name;
+                if (!node.IsPart || !EasyUIParts.IsDriven(node.part))
+                {
+                    Place(rect, node, designParent);
+                }
+
+                AddComponents(node, element);
+                AddRoleScript(node, element);
+                built[node.id] = element;
+
+                BuildChildren(node.id, rect, node.Rect, children, ui, built);
             }
         }
+
+        private static string DefaultName(EasyUINode node) =>
+            node.IsPart ? EasyUIParts.DefaultName(node.part) : EasyUINode.DefaultName(node.type);
 
         // Anchors and pivot as designed, and offsets that put the rect exactly where it was drawn in its parent.
         private static void Place(RectTransform rect, EasyUINode node, Rect parent)
@@ -154,29 +216,6 @@ namespace EasyUI
             var bottom = parent.yMax - (node.position.y + node.size.y);
             rect.offsetMin = new Vector2(left - anchorMin.x * parent.width, bottom - anchorMin.y * parent.height);
             rect.offsetMax = new Vector2(left + node.size.x - anchorMax.x * parent.width, bottom + node.size.y - anchorMax.y * parent.height);
-        }
-
-        // The selected object when it is inside a canvas; otherwise the canvas, made if there is none.
-        private static RectTransform ParentFor(GameObject selected)
-        {
-            if (selected == null)
-            {
-                selected = Selection.activeGameObject;
-            }
-
-            if (selected != null && !EditorUtility.IsPersistent(selected) && selected.transform is RectTransform rect &&
-                selected.GetComponentInParent<Canvas>(true) != null)
-            {
-                return rect;
-            }
-
-            var canvas = FindCanvas();
-            if (canvas == null)
-            {
-                canvas = CreateCanvas();
-            }
-
-            return (RectTransform)canvas.transform;
         }
 
         // The current stage's first active root canvas, a screen-space one if there is any.
@@ -253,17 +292,16 @@ namespace EasyUI
 
         #region Elements
 
-        // Made as Unity's GameObject > UI (Canvas) menu makes its kind, then set up as designed. `content` is where
-        // the element's children go when that isn't the element itself: a Scroll View's Content.
-        private static GameObject CreateElement(EasyUINode node, ControlSprites ui, out RectTransform content)
+        // Made as Unity's GameObject > UI (Canvas) menu makes its kind, then set up as designed. Its parts are set
+        // up by their own elements.
+        private static GameObject CreateElement(EasyUINode node, ControlSprites ui)
         {
-            content = null;
             GameObject go;
             switch (node.type)
             {
                 case EasyUIElementType.Text:
                     go = TMP_DefaultControls.CreateText(ui.Tmp);
-                    ApplyText(go.GetComponent<TextMeshProUGUI>(), node.text);
+                    ApplyText(go.GetComponent<TMP_Text>(), node.text);
                     break;
 
                 case EasyUIElementType.Image:
@@ -280,12 +318,6 @@ namespace EasyUI
                     go = TMP_DefaultControls.CreateButton(ui.Tmp);
                     ApplyImage(go.GetComponent<Image>(), node.image);
                     ApplySelectable(go.GetComponent<Button>(), node.selectable);
-                    var buttonLabel = go.GetComponentInChildren<TMP_Text>(true);
-                    if (buttonLabel != null)
-                    {
-                        buttonLabel.text = node.button.label;
-                    }
-
                     break;
 
                 case EasyUIElementType.Toggle:
@@ -312,7 +344,7 @@ namespace EasyUI
 
                 case EasyUIElementType.ScrollView:
                     go = DefaultControls.CreateScrollView(ui.Ugui);
-                    content = ApplyScrollView(go.GetComponent<ScrollRect>(), node);
+                    ApplyScrollView(go.GetComponent<ScrollRect>(), node);
                     break;
 
                 default:
@@ -321,6 +353,64 @@ namespace EasyUI
             }
 
             return go;
+        }
+
+        // The object Unity made for `part` inside `parent` (the object of the part's parent element), or null.
+        private static GameObject PartObject(GameObject parent, EasyUIPart part)
+        {
+            switch (part)
+            {
+                case EasyUIPart.Viewport:
+                    return ObjectOf(parent.GetComponent<ScrollRect>(), scroll => scroll.viewport);
+                case EasyUIPart.Content:
+                    return ObjectOf(parent.GetComponentInParent<ScrollRect>(true), scroll => scroll.content);
+                case EasyUIPart.ScrollbarHorizontal:
+                    return ObjectOf(parent.GetComponent<ScrollRect>(), scroll => scroll.horizontalScrollbar);
+                case EasyUIPart.ScrollbarVertical:
+                    return ObjectOf(parent.GetComponent<ScrollRect>(), scroll => scroll.verticalScrollbar);
+                case EasyUIPart.ScrollbarHandle:
+                    return ObjectOf(parent.GetComponent<Scrollbar>(), scrollbar => scrollbar.handleRect);
+                case EasyUIPart.ButtonText:
+                    return ObjectOf(parent.GetComponentInChildren<TMP_Text>(true), text => text);
+                case EasyUIPart.ToggleBackground:
+                    return ObjectOf(parent.GetComponent<Toggle>(), toggle => toggle.targetGraphic);
+                case EasyUIPart.ToggleCheckmark:
+                    return ObjectOf(parent.GetComponentInParent<Toggle>(true), toggle => toggle.graphic);
+                case EasyUIPart.DropdownLabel:
+                    return ObjectOf(parent.GetComponent<TMP_Dropdown>(), dropdown => dropdown.captionText);
+                case EasyUIPart.ToggleLabel:
+                case EasyUIPart.DropdownArrow:
+                    var child = parent.transform.Find(part == EasyUIPart.ToggleLabel ? "Label" : "Arrow");
+                    return child != null ? child.gameObject : null;
+                default:
+                    return null;
+            }
+        }
+
+        private static GameObject ObjectOf<T>(T owner, Func<T, Component> pick) where T : Component
+        {
+            if (owner == null)
+            {
+                return null;
+            }
+
+            var component = pick(owner);
+            return component != null ? component.gameObject : null;
+        }
+
+        // A part's own component, set up as designed: its Image or its Text.
+        private static void ApplyPart(GameObject element, EasyUINode node)
+        {
+            switch (node.type)
+            {
+                case EasyUIElementType.Image when element.TryGetComponent<Image>(out var image):
+                    ApplyImage(image, node.image);
+                    break;
+
+                case EasyUIElementType.Text when element.TryGetComponent<TMP_Text>(out var text):
+                    ApplyText(text, node.text);
+                    break;
+            }
         }
 
         private static void ApplyText(TMP_Text text, TextSettings settings)
@@ -386,7 +476,8 @@ namespace EasyUI
             };
         }
 
-        // Unity's Toggle comes with a legacy Text label; every Easy UI text is TextMeshPro, so it is swapped.
+        // Unity's Toggle comes with a legacy Text label; every Easy UI text is TextMeshPro, so it is swapped (its
+        // Label part then sets it up).
         private static void ApplyToggle(GameObject go, EasyUINode node)
         {
             var toggle = go.GetComponent<Toggle>();
@@ -395,23 +486,10 @@ namespace EasyUI
             toggle.SetIsOnWithoutNotify(node.toggle.isOn);
 
             var label = go.transform.Find("Label");
-            if (label == null)
+            if (label != null && label.TryGetComponent<Text>(out var legacy))
             {
-                return;
-            }
-
-            if (label.TryGetComponent<Text>(out var legacy))
-            {
-                var fontSize = legacy.fontSize;
                 Object.DestroyImmediate(legacy);
-                var text = label.gameObject.AddComponent<TextMeshProUGUI>();
-                text.fontSize = fontSize;
-                text.color = LabelColor;
-            }
-
-            if (label.TryGetComponent<TMP_Text>(out var tmp))
-            {
-                tmp.text = node.toggle.label;
+                label.gameObject.AddComponent<TextMeshProUGUI>();
             }
         }
 
@@ -453,9 +531,8 @@ namespace EasyUI
             }
         }
 
-        // Its Scroll Rect's fields, and only the scrollbars ticked. Its Content starts as large as the view, so
-        // the elements designed inside the view land where they were drawn. Returns the Content.
-        private static RectTransform ApplyScrollView(ScrollRect scroll, EasyUINode node)
+        // Its Scroll Rect's fields, and only the scrollbars ticked (the others' parts don't exist).
+        private static void ApplyScrollView(ScrollRect scroll, EasyUINode node)
         {
             var settings = node.scrollView;
             scroll.horizontal = settings.horizontal;
@@ -487,22 +564,16 @@ namespace EasyUI
                 Object.DestroyImmediate(scroll.verticalScrollbar.gameObject);
                 scroll.verticalScrollbar = null;
             }
-
-            var content = scroll.content;
-            content.sizeDelta = new Vector2(content.sizeDelta.x, node.size.y);
-            return content;
         }
 
-        // The optional components. A Scroll View's Content Size Fitter and Layout Group go on its Content, which
-        // is what they size and lay out; everything else goes on the element itself.
-        private static void AddComponents(EasyUINode node, GameObject element, RectTransform content)
+        // The optional components, on the element itself. A part may already have one of them from Unity (a
+        // Viewport's Mask): it is set up as designed, or removed when the design doesn't have it.
+        private static void AddComponents(EasyUINode node, GameObject element)
         {
-            var host = content != null ? content.gameObject : element;
-
             var fitter = node.contentSizeFitter;
             if (fitter.enabled)
             {
-                var component = host.AddComponent<ContentSizeFitter>();
+                var component = GetOrAdd<ContentSizeFitter>(element);
                 component.horizontalFit = (ContentSizeFitter.FitMode)fitter.horizontalFit;
                 component.verticalFit = (ContentSizeFitter.FitMode)fitter.verticalFit;
             }
@@ -510,7 +581,7 @@ namespace EasyUI
             var group = node.canvasGroup;
             if (group.enabled)
             {
-                var component = element.AddComponent<CanvasGroup>();
+                var component = GetOrAdd<CanvasGroup>(element);
                 component.alpha = group.alpha;
                 component.interactable = group.interactable;
                 component.blocksRaycasts = group.blocksRaycasts;
@@ -519,13 +590,13 @@ namespace EasyUI
 
             if (node.layoutGroup.enabled)
             {
-                AddLayoutGroup(host, node.layoutGroup);
+                AddLayoutGroup(element, node.layoutGroup);
             }
 
             var layout = node.layoutElement;
             if (layout.enabled)
             {
-                var component = element.AddComponent<LayoutElement>();
+                var component = GetOrAdd<LayoutElement>(element);
                 component.ignoreLayout = layout.ignoreLayout;
                 component.minWidth = layout.useMinWidth ? layout.minWidth : -1f;
                 component.minHeight = layout.useMinHeight ? layout.minHeight : -1f;
@@ -535,7 +606,54 @@ namespace EasyUI
                 component.flexibleHeight = layout.useFlexibleHeight ? layout.flexibleHeight : -1f;
                 component.layoutPriority = layout.layoutPriority;
             }
+
+            if (node.mask.enabled)
+            {
+                // A Mask clips to its graphic: an element without one (e.g. Empty) gets a plain Image.
+                if (!element.TryGetComponent<Graphic>(out _))
+                {
+                    element.AddComponent<Image>();
+                }
+
+                GetOrAdd<Mask>(element).showMaskGraphic = node.mask.showMaskGraphic;
+            }
+            else if (element.TryGetComponent<Mask>(out var unwanted))
+            {
+                Object.DestroyImmediate(unwanted);
+            }
+
+            var rectMask = node.rectMask2D;
+            if (rectMask.enabled)
+            {
+                var component = GetOrAdd<RectMask2D>(element);
+                component.padding = rectMask.padding;
+                component.softness = rectMask.softness;
+            }
         }
+
+        // A role of your own (see EasyUICustomRoles.cs) adds its script.
+        private static void AddRoleScript(EasyUINode node, GameObject element)
+        {
+            if (!EasyUICustomRoles.IsCustom(node.role))
+            {
+                return;
+            }
+
+            var type = EasyUICustomRoles.ComponentOf(node.role);
+            if (type == null)
+            {
+                Debug.LogWarning($"[EasyUI] '{element.name}' has a role whose script is gone or can't be added: {node.role}.", element);
+                return;
+            }
+
+            if (element.GetComponent(type) == null)
+            {
+                element.AddComponent(type);
+            }
+        }
+
+        private static T GetOrAdd<T>(GameObject go) where T : Component =>
+            go.TryGetComponent<T>(out var component) ? component : go.AddComponent<T>();
 
         private static void AddLayoutGroup(GameObject host, LayoutGroupSettings settings)
         {

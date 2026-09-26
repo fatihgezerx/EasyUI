@@ -18,6 +18,26 @@ namespace EasyUI
         ScrollView
     }
 
+    /// <summary>
+    /// Which built-in piece of a Scroll View, Button, Toggle or Dropdown an element is (see EasyUIParts.cs), or
+    /// <see cref="None"/> for an element of its own.
+    /// </summary>
+    public enum EasyUIPart
+    {
+        None,
+        Viewport,
+        Content,
+        ScrollbarHorizontal,
+        ScrollbarVertical,
+        ScrollbarHandle,
+        ButtonText,
+        ToggleBackground,
+        ToggleCheckmark,
+        ToggleLabel,
+        DropdownLabel,
+        DropdownArrow
+    }
+
     /// <summary>Where a RectTransform is anchored horizontally in its parent, like the columns of Unity's Anchor Presets.</summary>
     public enum HorizontalAnchor
     {
@@ -169,6 +189,31 @@ namespace EasyUI
         public GridStartAxis startAxis;
         public GridConstraint constraint;
         public int constraintCount = 2;
+    }
+
+    /// <summary>
+    /// An optional Mask component: clips the children to the element's graphic. An element without a graphic of
+    /// its own (e.g. Empty) gets an Image for it when built, since a Mask needs one.
+    /// </summary>
+    [Serializable]
+    public sealed class MaskSettings
+    {
+        public bool enabled;
+        public bool open = true;
+        public bool showMaskGraphic = true;
+    }
+
+    /// <summary>An optional Rect Mask 2D component: clips the children to the element's rect, without a graphic.</summary>
+    [Serializable]
+    public sealed class RectMask2DSettings
+    {
+        public bool enabled;
+        public bool open = true;
+        public bool paddingOpen;
+
+        // As uGUI keeps it: x left, y bottom, z right, w top.
+        public Vector4 padding;
+        public Vector2Int softness;
     }
 
     /// <summary>An optional Layout Element component: each size is only used while its box is ticked, as in uGUI.</summary>

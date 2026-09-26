@@ -43,7 +43,8 @@ namespace EasyUI
         private const float MinorStepTarget = 20f;
         private const float MinLineGap = 6f;
 
-        // The smallest an element can be made, in canvas units.
+        // The smallest an element can be dragged to on the canvas, in canvas units - any smaller and its edges
+        // couldn't be grabbed. Its Rect Transform fields go down to 0.
         private const float MinElementSize = 8f;
 
         // The pivot ring's size, and how close to an edge the pointer must be to grab it; window pixels.
@@ -193,6 +194,7 @@ namespace EasyUI
             titleContent = new GUIContent(Title);
             wantsMouseMove = true;
             EditorApplication.hierarchyChanged += OnHierarchyChanged;
+            EasyUIParts.EnsureParts(document);
         }
 
         private void OnDisable()
@@ -279,6 +281,10 @@ namespace EasyUI
                 _drag = Drag.None;
             }
 
+            // Layout components first (they move and size elements), then which labels show, for this event's
+            // clicks and drawing alike.
+            UpdateLayout();
+            UpdateLabels();
             HandleInput(hasCanvas);
             UpdateCursor(hasCanvas);
 
@@ -398,13 +404,14 @@ namespace EasyUI
             }
         }
 
-        // The element under the pointer (window pixels), topmost - drawn last - first.
+        // The element under the pointer (window pixels), topmost - drawn last - first. A part only counts while
+        // its parent is selected (see EasyUIWindow.Parts.cs).
         private EasyUINode NodeAt(Vector2 pointer)
         {
             var order = DrawOrder();
             for (var i = order.Count - 1; i >= 0; i--)
             {
-                if (ToScreen(order[i].Rect).Contains(pointer))
+                if (IsClickable(order[i]) && ToScreen(order[i].Rect).Contains(pointer))
                 {
                     return order[i];
                 }
@@ -421,13 +428,13 @@ namespace EasyUI
         }
 
         /// <summary>
-        /// Moves and resizes the element (never below the smallest size), its children following as their anchors
+        /// Moves and resizes the element (never below a size of 0), its children following as their anchors
         /// say. With <paramref name="keepInside"/>, it is moved inside its parent - or the canvas - if it would
         /// stick out; otherwise it is placed as asked, and drawn red if it is out.
         /// </summary>
         private void SetRect(EasyUINode node, Rect rect, bool keepInside = false)
         {
-            var size = Vector2.Max(rect.size, Vector2.one * MinElementSize);
+            var size = Vector2.Max(rect.size, Vector2.zero);
             var position = rect.position;
             if (keepInside)
             {
@@ -440,7 +447,7 @@ namespace EasyUI
         }
 
         // Adds an element of `type` with its top-left corner at `at` (canvas units), under `parentId` (0: the
-        // panel), selects it and asks for its name.
+        // panel) - with its parts, if it has any - selects it and asks for its name.
         private void AddNode(EasyUIElementType type, int parentId, Vector2 at)
         {
             var node = new EasyUINode
@@ -454,6 +461,7 @@ namespace EasyUI
             ApplyDefaultLook(node);
             document.nodes.Add(node);
             SetRect(node, new Rect(at, node.size), true);
+            EasyUIParts.EnsureParts(document, node);
             SelectOnly(node.id);
             StartRename(node);
             Repaint();
@@ -541,14 +549,24 @@ namespace EasyUI
                     if (_drag == Drag.Select)
                     {
                         var released = NodeAt(e.mousePosition);
-                        if (released != null && released.id == _pressedId)
+                        if (_drillId != 0)
+                        {
+                            // A click on a selected part with nothing deeper: back to the outermost element.
+                            SelectOnly(_drillId);
+                        }
+                        else if (released != null && released.id == _pressedId)
                         {
                             SelectOnly(released.id);
                         }
                     }
 
-                    // A click (no drag) on one of several selected elements selects just that one.
-                    if (_drag == Drag.Move && !_moved && _selected.Count > 1)
+                    // A click (no drag) inside a selected element goes one level deeper; one on one of several
+                    // selected elements selects just that one.
+                    if (_drag == Drag.Move && !_moved && _drillId != 0)
+                    {
+                        SelectOnly(_drillId);
+                    }
+                    else if (_drag == Drag.Move && !_moved && _selected.Count > 1)
                     {
                         SelectOnly(_pressedId);
                     }
@@ -615,7 +633,7 @@ namespace EasyUI
                 case EventType.MouseMove when hasCanvas:
                     // Only what is under the pointer matters here, for the cursor and highlights: repaint when it changes.
                     var selected = _selected.Count == 1 ? document.Find(_selectedId) : null;
-                    var hover = selected != null && inView ? EdgesAt(ToScreen(selected.Rect), e.mousePosition) : Edges.None;
+                    var hover = selected != null && !selected.IsPart && inView ? EdgesAt(ToScreen(selected.Rect), e.mousePosition) : Edges.None;
                     var hoverPencil = inView ? PencilAt(e.mousePosition) : null;
                     var hoverPencilId = hoverPencil != null ? hoverPencil.id : 0;
                     var hoverInfo = InfoButtonRect(_view).Contains(e.mousePosition);
@@ -631,15 +649,18 @@ namespace EasyUI
             }
         }
 
-        private static bool IsPanning(Event e) => e.button == 2 || (e.button == 0 && e.alt);
+        // Middle drag, or Alt + left drag - unless something else holds the mouse (e.g. a value dragged in the
+        // panel on the right with Alt, for fine steps).
+        private static bool IsPanning(Event e) => GUIUtility.hotControl == 0 && (e.button == 2 || (e.button == 0 && e.alt));
 
         private static bool IsSelectionCommand(string command) => command is "Duplicate" or "Delete" or "SoftDelete";
 
         // The right-click menu, like Shader Graph's "Create Node": search or browse for an element to add at the
-        // click - under the selected one, or under the panel when nothing is selected.
+        // click - under the selected one (a Scroll View's: in its Content), or under the panel when nothing is selected.
         private void ShowAddMenu(Vector2 pointer)
         {
-            var parentId = document.Find(_selectedId) != null ? _selectedId : 0;
+            var parent = EasyUIParts.ChildParent(document, document.Find(_selectedId));
+            var parentId = parent != null ? parent.id : 0;
             var at = ToCanvas(pointer);
             _createDropdownState ??= new UnityEditor.IMGUI.Controls.AdvancedDropdownState();
             new ElementDropdown(_createDropdownState, type =>
@@ -651,17 +672,20 @@ namespace EasyUI
         }
 
         // A press on the edge of the one selected element resizes it. A press on a selected element moves the
-        // selection; on one not selected, it only picks it, to select on release (see HandleInput) - so nothing
-        // moves until it is pressed again. With Ctrl, a press only adds or removes that element. A press on an
-        // empty spot starts a selection box, clearing the selection unless Ctrl is held.
+        // selection; so does one on something inside a selected element, which a click without a drag selects
+        // instead (one level deeper, see IsClickable). A press on an element not selected nor inside one only
+        // picks it, to select on release (see HandleInput) - so nothing moves until it is pressed again. With Ctrl,
+        // a press only adds or removes that element. A press on an empty spot starts a selection box, clearing the
+        // selection unless Ctrl is held.
         private void BeginDrag(Vector2 pointer, bool additive)
         {
             _dragStartPointer = ToCanvas(pointer);
             _dragEdges = Edges.None;
             _drag = Drag.None;
+            _drillId = 0;
 
             var selected = _selected.Count == 1 ? document.Find(_selectedId) : null;
-            var edges = !additive && selected != null ? EdgesAt(ToScreen(selected.Rect), pointer) : Edges.None;
+            var edges = !additive && selected != null && !selected.IsPart ? EdgesAt(ToScreen(selected.Rect), pointer) : Edges.None;
             if (edges != Edges.None)
             {
                 _dragStartRect = selected.Rect;
@@ -691,13 +715,37 @@ namespace EasyUI
 
             if (!IsSelected(hit))
             {
+                var holder = SelectedAncestor(hit);
+                if (holder != null && !holder.IsPart)
+                {
+                    _selectedId = holder.id;
+                    StartMove(holder);
+                    _drillId = hit.id;
+                    return;
+                }
+
                 _pressedId = hit.id;
                 _drag = Drag.Select;
                 return;
             }
 
             _selectedId = hit.id;
-            StartMove(hit);
+
+            // Nothing deeper under the pointer (a child would have been hit): a click without a drag starts over
+            // from the outermost element there. Not while several are selected: a click then keeps just this one.
+            if (_selected.Count == 1)
+            {
+                _drillId = RootOf(hit).id;
+            }
+
+            if (!hit.IsPart)
+            {
+                StartMove(hit);
+            }
+            else if (_drillId != 0)
+            {
+                _drag = Drag.Select;
+            }
         }
 
         private void ContinueDrag(Vector2 pointer, bool snap)
@@ -826,7 +874,10 @@ namespace EasyUI
 
             foreach (var node in document.nodes)
             {
-                EditorGUIUtility.AddCursorRect(PencilRect(node), MouseCursor.Link);
+                if (HasLabel(node))
+                {
+                    EditorGUIUtility.AddCursorRect(PencilRect(node), MouseCursor.Link);
+                }
             }
 
             EditorGUIUtility.AddCursorRect(InfoButtonRect(_view), MouseCursor.Link);
@@ -893,8 +944,15 @@ namespace EasyUI
 
         // Blue, or green while selected; all red while out of place - partly off the canvas (never seen in game)
         // or over another element on its layer; yellow edges while a drag presses it against another on its layer.
+        // A part is a thin outline while it shows (see EasyUIWindow.Parts.cs), green while selected.
         private void DrawNode(EasyUINode node)
         {
+            if (node.IsPart)
+            {
+                DrawPart(node);
+                return;
+            }
+
             var rect = node.Rect;
             var selected = IsSelected(node);
             var problem = Problem(node);
@@ -906,13 +964,43 @@ namespace EasyUI
             var borderColor = heldBack ? HeldBackBorderColor : invalid ? InvalidBorderColor : selected ? SelectedBorderColor : IdleBorderColor;
             DrawBorder(screen, borderColor, selected || invalid || heldBack ? 2f : 1f);
 
-            DrawNodeLabel(node, screen, problem);
+            if (HasLabel(node))
+            {
+                DrawNodeLabel(node, screen, problem);
+            }
+
             DrawPivot(rect, node.pivot);
         }
 
-        // Why the element is out of place, to show after its name - or null when it isn't.
+        private void DrawPart(EasyUINode node)
+        {
+            if (!IsRevealed(node))
+            {
+                return;
+            }
+
+            var screen = ToScreen(node.Rect);
+            if (IsSelected(node))
+            {
+                EditorGUI.DrawRect(screen, SelectedFillColor);
+                DrawBorder(screen, SelectedBorderColor, 2f);
+                DrawNodeLabel(node, screen, null);
+                DrawPivot(node.Rect, node.pivot);
+                return;
+            }
+
+            DrawBorder(screen, PartBorderColor, 1f);
+        }
+
+        // Why the element is out of place, to show after its name - or null when it isn't. Parts are never out of
+        // place: Unity lays them out.
         private string Problem(EasyUINode node)
         {
+            if (node.IsPart)
+            {
+                return null;
+            }
+
             if (!IsInside(node.Rect, CanvasRect))
             {
                 return "outside the canvas";
