@@ -7,7 +7,7 @@ namespace EasyUI
     // Smart guides, like a design tool's: while an element is dragged or resized, a thin blue line shows wherever
     // one of its edges or its middle lines up with an edge or the middle of another element or of the canvas,
     // spanning the two. Coming close to such a line (a few pixels) pulls the element onto it, so things are easy
-    // to line up exactly. With Ctrl held, the canvas grid snap applies instead.
+    // to line up exactly. With Shift held, the canvas grid snap applies instead.
     internal sealed partial class EasyUIWindow
     {
         // How close (window pixels) an edge must come to a line to be pulled onto it.

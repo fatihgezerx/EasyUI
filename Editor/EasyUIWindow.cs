@@ -20,7 +20,7 @@ namespace EasyUI
     /// anchors say and never leave it - see <c>EasyUIWindow.Selection.cs</c>.</item>
     /// <item>An element's layer is how deep it sits: 1 for the panel's own children, 2 for theirs... Elements on
     /// the same layer can't overlap - see <c>EasyUIWindow.Layers.cs</c>.</item>
-    /// <item>Hold Ctrl while moving or resizing to snap to the canvas lines; blue guides show and pull onto
+    /// <item>Hold Shift while moving or resizing to snap to the canvas lines; blue guides show and pull onto
     /// lined-up edges - see <c>EasyUIWindow.Guides.cs</c>.</item>
     /// <item>The selected element's Rect Transform and components are edited in the panel on the right - see
     /// <c>EasyUIWindow.Inspector.cs</c>. The top bar names, saves and clears the panel.</item>
@@ -78,7 +78,7 @@ namespace EasyUI
         private int _drawnCanvasId;
         private Rect _view;
 
-        // The grid's steps: a strong line every _majorStep, a thin one every _minorStep - which Ctrl snaps to.
+        // The grid's steps: a strong line every _majorStep, a thin one every _minorStep - which Shift snaps to.
         private float _majorStep = DefaultMajorStep;
         private float _minorStep = MinorStepTarget;
         private Vector2 _gridStepsFor;
@@ -528,7 +528,7 @@ namespace EasyUI
                     break;
 
                 case EventType.MouseDrag when GUIUtility.hotControl == id:
-                    ContinueDrag(e.mousePosition, e.control);
+                    ContinueDrag(e.mousePosition, e.shift);
                     e.Use();
                     Repaint();
                     break;

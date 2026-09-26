@@ -91,6 +91,11 @@ namespace EasyUI
     public sealed class EasyUIDocument
     {
         public string panelName = "New Panel";
+
+        // The canvas's size when the panel was last saved: the space element positions are measured in, so a
+        // build can anchor them to a parent of any size. Zero for panels saved before it was kept.
+        public Vector2 canvasSize;
+
         public List<EasyUINode> nodes = new();
         public int nextId = 1;
         public int editCounter;

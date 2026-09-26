@@ -223,7 +223,7 @@ namespace EasyUI
             _drag = Drag.Move;
         }
 
-        // The lead goes to where the pointer takes it - snapped with Ctrl, pulled onto lined-up edges otherwise,
+        // The lead goes to where the pointer takes it - snapped with Shift, pulled onto lined-up edges otherwise,
         // stopped by elements on its layer - and every other moving element by as much; but no further than keeps
         // each of them inside its parent (or the canvas).
         private void MoveSelection(Vector2 delta, bool snap)

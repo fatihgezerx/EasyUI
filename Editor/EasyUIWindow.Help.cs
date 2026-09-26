@@ -24,7 +24,7 @@ namespace EasyUI
             ("Select with a box", "Drag on an empty spot"),
             ("Move the selection", "Drag a selected element"),
             ("Resize", "Drag an edge or a corner"),
-            ("Snap to the grid", "Hold Ctrl while dragging"),
+            ("Snap to the grid", "Hold Shift while dragging"),
             ("Duplicate", "Ctrl + D"),
             ("Delete", "Delete"),
             ("Rename", "Click the pencil"),

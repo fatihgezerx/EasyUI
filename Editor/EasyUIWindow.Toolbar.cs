@@ -5,11 +5,12 @@ using UnityEngine;
 namespace EasyUI
 {
     // The top bar: the panel's name, Open (a saved panel, or a new one), Templates, Clear (after asking) and Save.
-    // Save keeps the panel as an EasyUIPanel asset named after it, in the Panels folder, from which Open brings
-    // it back to keep editing.
+    // Save asks where to keep the panel, as an EasyUIPanel asset from which Open brings it back to keep editing.
+    // The save dialog starts in the folder of the panel being edited, or else in the folder saved to last.
     internal sealed partial class EasyUIWindow
     {
-        private const string PanelFolder = "Assets/EasyUI Panels";
+        // The folder saved to last, kept per project (in its UserSettings), so the dialog starts there next time.
+        private const string SaveFolderKey = "EasyUI.SaveFolder";
 
         [SerializeField] private EasyUIPanel openedAsset;
 
@@ -38,9 +39,12 @@ namespace EasyUI
                     ClearPanel();
                 }
 
-                if (GUILayout.Button(new GUIContent("Save", $"Save this panel in {PanelFolder}"), EditorStyles.toolbarButton, GUILayout.Width(50f)))
+                if (GUILayout.Button(new GUIContent("Save", "Choose where to save this panel"), EditorStyles.toolbarButton, GUILayout.Width(50f)))
                 {
                     SavePanel();
+
+                    // The save dialog ran inside this event: end it here, before the layout it interrupted.
+                    GUIUtility.ExitGUI();
                 }
             }
         }
@@ -118,7 +122,9 @@ namespace EasyUI
             Repaint();
         }
 
-        // Into the asset it was opened from (renamed along with the panel), or a new one named after the panel.
+        // Asks where to save, offering the panel's name, then saves into that asset - the one it was opened from,
+        // another saved panel (the dialog has asked before replacing it), or a new one. The panel takes the file's
+        // name, as Open lists it.
         private void SavePanel()
         {
             ConfirmRename();
@@ -131,54 +137,61 @@ namespace EasyUI
 
             if (name.Length == 0)
             {
-                EditorUtility.DisplayDialog("Save Panel", "Give the panel a name first.", "OK");
+                name = "New Panel";
+            }
+
+            var path = EditorUtility.SaveFilePanelInProject("Save Panel", name, "asset",
+                "Choose where to save this panel.", SaveFolder());
+            if (string.IsNullOrEmpty(path))
+            {
                 return;
             }
 
-            if (!AssetDatabase.IsValidFolder(PanelFolder))
-            {
-                AssetDatabase.CreateFolder("Assets", Path.GetFileName(PanelFolder));
-            }
-
-            var path = $"{PanelFolder}/{name}.asset";
-            var existing = AssetDatabase.LoadAssetAtPath<EasyUIPanel>(path);
-            var panel = openedAsset;
-
-            if (panel != null && existing != panel)
-            {
-                if (existing == null)
-                {
-                    // The panel was renamed: its asset follows.
-                    AssetDatabase.MoveAsset(AssetDatabase.GetAssetPath(panel), path);
-                }
-                else
-                {
-                    panel = null;
-                }
-            }
-
+            var panel = AssetDatabase.LoadAssetAtPath<EasyUIPanel>(path);
             if (panel == null)
             {
-                if (existing != null && !EditorUtility.DisplayDialog("Save Panel",
-                        $"A panel named \"{name}\" already exists. Replace it?", "Replace", "Cancel"))
+                if (AssetDatabase.LoadMainAssetAtPath(path) != null)
                 {
+                    EditorUtility.DisplayDialog("Save Panel",
+                        $"\"{path}\" is not an Easy UI panel, so it wasn't replaced. Choose another name.", "OK");
                     return;
                 }
 
-                panel = existing;
-                if (panel == null)
-                {
-                    panel = CreateInstance<EasyUIPanel>();
-                    AssetDatabase.CreateAsset(panel, path);
-                }
+                panel = CreateInstance<EasyUIPanel>();
+                AssetDatabase.CreateAsset(panel, path);
             }
 
+            EditorUserSettings.SetConfigValue(SaveFolderKey, Path.GetDirectoryName(path)?.Replace('\\', '/'));
+
+            name = Path.GetFileNameWithoutExtension(path);
             document.panelName = name;
+            if (_canvasSize != Vector2.zero)
+            {
+                document.canvasSize = _canvasSize;
+            }
+
             panel.Store(document);
             EditorUtility.SetDirty(panel);
             AssetDatabase.SaveAssets();
             openedAsset = panel;
+            EasyUIMenuGenerator.Queue();
             ShowNotification(new GUIContent($"Saved {name}"));
+        }
+
+        // Where the save dialog starts: the folder of the panel being edited, the one saved to last, or Assets.
+        private string SaveFolder()
+        {
+            if (openedAsset != null)
+            {
+                var folder = Path.GetDirectoryName(AssetDatabase.GetAssetPath(openedAsset))?.Replace('\\', '/');
+                if (!string.IsNullOrEmpty(folder) && AssetDatabase.IsValidFolder(folder))
+                {
+                    return folder;
+                }
+            }
+
+            var last = EditorUserSettings.GetConfigValue(SaveFolderKey);
+            return !string.IsNullOrEmpty(last) && AssetDatabase.IsValidFolder(last) ? last : "Assets";
         }
     }
 }
