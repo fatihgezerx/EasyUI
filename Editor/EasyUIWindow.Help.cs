@@ -29,6 +29,8 @@ namespace EasyUI
             ("Duplicate", "Ctrl + D"),
             ("Delete", "Delete"),
             ("Rename", "Click the pencil"),
+            ("Undo (up to 10 steps)", "Ctrl + Z"),
+            ("Redo", "Ctrl + Y"),
             ("Frame the selection (or the canvas)", "F"),
             ("Pan", "Middle drag, or Alt + drag"),
             ("Zoom", "Scroll wheel")

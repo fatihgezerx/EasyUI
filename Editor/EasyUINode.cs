@@ -95,6 +95,17 @@ namespace EasyUI
     }
 
     /// <summary>
+    /// What a design is built as. A <see cref="Panel"/> is a window stretched over the whole canvas, with its
+    /// elements in it. A <see cref="Popup"/> is its Popup element - an Empty made with it, holding every other
+    /// element - which is itself the window.
+    /// </summary>
+    public enum EasyUIDocumentKind
+    {
+        Panel,
+        Popup
+    }
+
+    /// <summary>
     /// A panel being designed: its name and every element in it, as a flat list where each one names its parent.
     /// Held by the <see cref="EasyUIWindow"/> while it is edited, and by an <see cref="EasyUIPanel"/> once saved.
     /// </summary>
@@ -107,9 +118,20 @@ namespace EasyUI
         // build can anchor them to a parent of any size. Zero for panels saved before it was kept.
         public Vector2 canvasSize;
 
+        public EasyUIDocumentKind kind;
+
+        // A Popup's Popup element; 0 in a Panel.
+        public int popupId;
+
         public List<EasyUINode> nodes = new();
         public int nextId = 1;
         public int editCounter;
+
+        /// <summary>A Popup's Popup element: the window, which holds every other element. Null in a Panel.</summary>
+        public EasyUINode PopupNode => kind == EasyUIDocumentKind.Popup ? Find(popupId) : null;
+
+        /// <summary>Whether <paramref name="node"/> is a Popup's Popup element, which stays: it can't be deleted or copied.</summary>
+        public bool IsPopupNode(EasyUINode node) => node != null && kind == EasyUIDocumentKind.Popup && node.id == popupId;
 
         public EasyUINode Find(int id)
         {

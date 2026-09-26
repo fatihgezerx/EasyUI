@@ -16,8 +16,10 @@ namespace EasyUI
     /// its elements by role (see <see cref="Build"/>).
     /// </summary>
     /// <remarks>
-    /// The panel becomes an object stretched over its parent - the selected object when it is inside a canvas,
-    /// otherwise the scene's canvas, made (with an EventSystem) if there is none - with every element under it.
+    /// A Panel becomes an object stretched over its parent - the selected object when it is inside a canvas,
+    /// otherwise the scene's canvas, made (with an EventSystem) if there is none - with every element under it. A
+    /// Popup becomes its Popup element, placed in that parent where it was drawn on the canvas, with every other
+    /// element under it.
     /// Each element is made the way Unity's own <c>GameObject &gt; UI (Canvas)</c> menu makes its kind, then set up
     /// as it was designed: anchors, pivot, the settings of its components and the components added to it. Parts
     /// (a Scroll View's Viewport, a Button's Text...) are the objects Unity made for them, set up the same way. The
@@ -51,8 +53,8 @@ namespace EasyUI
         }
 
         /// <summary>
-        /// Builds <paramref name="panel"/> under <paramref name="parent"/> and returns its root object, named after
-        /// the panel. When <paramref name="built"/> is given, it is filled with every element's object by the
+        /// Builds <paramref name="panel"/> under <paramref name="parent"/> and returns its root object: for a Panel,
+        /// one named after the panel; for a Popup, its Popup element. When <paramref name="built"/> is given, it is filled with every element's object by the
         /// element's id - parts included - so a caller can find elements by role
         /// (<see cref="EasyUIRoles.FindNode"/>). Nothing is recorded for undo: the caller registers the root.
         /// </summary>
@@ -105,17 +107,29 @@ namespace EasyUI
                 designSize = FallbackCanvasSize;
             }
 
-            var root = new GameObject(name, typeof(RectTransform));
-            var rootRect = (RectTransform)root.transform;
-            rootRect.SetParent(parent, false);
-            rootRect.anchorMin = Vector2.zero;
-            rootRect.anchorMax = Vector2.one;
-            rootRect.offsetMin = Vector2.zero;
-            rootRect.offsetMax = Vector2.zero;
-            GameObjectUtility.EnsureUniqueNameForSibling(root);
-
             var ui = new ControlSprites();
-            BuildChildren(0, rootRect, new Rect(Vector2.zero, designSize), ChildrenByParent(document), ui, built);
+            var canvasRect = new Rect(Vector2.zero, designSize);
+            var children = ChildrenByParent(document);
+            GameObject root;
+
+            var popup = document.PopupNode;
+            if (popup != null)
+            {
+                root = BuildElement(popup, parent, canvasRect, children, ui, built);
+            }
+            else
+            {
+                root = new GameObject(name, typeof(RectTransform));
+                var rootRect = (RectTransform)root.transform;
+                rootRect.SetParent(parent, false);
+                rootRect.anchorMin = Vector2.zero;
+                rootRect.anchorMax = Vector2.one;
+                rootRect.offsetMin = Vector2.zero;
+                rootRect.offsetMax = Vector2.zero;
+                BuildChildren(0, rootRect, canvasRect, children, ui, built);
+            }
+
+            GameObjectUtility.EnsureUniqueNameForSibling(root);
 
             var layer = parent.gameObject.layer;
             foreach (var child in root.GetComponentsInChildren<Transform>(true))
@@ -127,9 +141,10 @@ namespace EasyUI
         }
 
         // Each element under its parent's id, in the order they were added; elements whose parent is gone count
-        // as the panel's own (0), as the window draws them.
+        // as the panel's own (0), as the window draws them - in a Popup, as its Popup element's.
         private static Dictionary<int, List<EasyUINode>> ChildrenByParent(EasyUIDocument document)
         {
+            var popup = document.PopupNode;
             var ids = new HashSet<int>();
             foreach (var node in document.nodes)
             {
@@ -140,6 +155,11 @@ namespace EasyUI
             foreach (var node in document.nodes)
             {
                 var parentId = ids.Contains(node.parentId) ? node.parentId : 0;
+                if (parentId == 0 && popup != null && node != popup)
+                {
+                    parentId = popup.id;
+                }
+
                 if (!children.TryGetValue(parentId, out var list))
                 {
                     list = new List<EasyUINode>();
@@ -164,36 +184,44 @@ namespace EasyUI
 
             foreach (var node in list)
             {
-                GameObject element;
-                if (node.IsPart)
-                {
-                    element = PartObject(into.gameObject, node.part);
-                    if (element == null)
-                    {
-                        continue;
-                    }
-
-                    ApplyPart(element, node);
-                }
-                else
-                {
-                    element = CreateElement(node, ui);
-                    ((RectTransform)element.transform).SetParent(into, false);
-                }
-
-                var rect = (RectTransform)element.transform;
-                element.name = string.IsNullOrEmpty(node.name) ? DefaultName(node) : node.name;
-                if (!node.IsPart || !EasyUIParts.IsDriven(node.part))
-                {
-                    Place(rect, node, designParent);
-                }
-
-                AddComponents(node, element);
-                AddRoleScript(node, element);
-                built[node.id] = element;
-
-                BuildChildren(node.id, rect, node.Rect, children, ui, built);
+                BuildElement(node, into, designParent, children, ui, built);
             }
+        }
+
+        // The element in `into`, set up as designed, with everything under it; null for a part Unity didn't make.
+        private static GameObject BuildElement(EasyUINode node, RectTransform into, Rect designParent,
+            Dictionary<int, List<EasyUINode>> children, ControlSprites ui, Dictionary<int, GameObject> built)
+        {
+            GameObject element;
+            if (node.IsPart)
+            {
+                element = PartObject(into.gameObject, node.part);
+                if (element == null)
+                {
+                    return null;
+                }
+
+                ApplyPart(element, node);
+            }
+            else
+            {
+                element = CreateElement(node, ui);
+                ((RectTransform)element.transform).SetParent(into, false);
+            }
+
+            var rect = (RectTransform)element.transform;
+            element.name = string.IsNullOrEmpty(node.name) ? DefaultName(node) : node.name;
+            if (!node.IsPart || !EasyUIParts.IsDriven(node.part))
+            {
+                Place(rect, node, designParent);
+            }
+
+            AddComponents(node, element);
+            AddRoleScript(node, element);
+            built[node.id] = element;
+
+            BuildChildren(node.id, rect, node.Rect, children, ui, built);
+            return element;
         }
 
         private static string DefaultName(EasyUINode node) =>

@@ -34,6 +34,8 @@ builds.
 - Layers: an element's layer is how deep it sits, and elements on the same layer can't overlap
 - Smart guides that pull edges and middles onto lined-up elements, and Shift to snap to the canvas grid
 - Multi-selection, box selection, duplicate (Ctrl + D) and delete, with children
+- Undo (Ctrl + Z) and redo (Ctrl + Y), up to ten steps
+- Panels and Popups: a Panel is a window over the whole canvas, a Popup a window of its own size
 - Inline renaming with a pencil icon, and names that fade out when they don't fit
 - A red outline for anything out of place: off the canvas, outside its parent, or over another element
   on its layer
@@ -55,6 +57,8 @@ builds.
 | Duplicate | Ctrl + D |
 | Delete | Delete |
 | Rename | Click the pencil |
+| Undo (up to 10 steps) | Ctrl + Z |
+| Redo | Ctrl + Y |
 | Frame the selection (or the canvas) | F |
 | Pan | Middle drag, or Alt + drag |
 | Zoom | Scroll wheel |
@@ -77,6 +81,11 @@ element's.
 
 Selected elements are green. The element clicked last is the one the inspector shows and the one resized
 by its edges.
+
+Undo and redo go back and forth ten steps at most. A step is whatever changed the design between two
+presses: a drag, a value set in the inspector, a new element and its name. Opening a folded section of the
+inspector isn't one. While the window has focus, Ctrl + Z and Ctrl + Y are its own instead of Unity's; a
+text field being typed in keeps its own. A new or opened design starts a history of its own.
 
 ## Layers
 
@@ -207,19 +216,34 @@ component. Several elements can share one, and the same window lists the roles m
 them. So a system of your own - an inventory you wrote yourself, say - can mark its elements without any
 code for EasyUI.
 
+## Panels and Popups
+
+The dropdown at the left of the top bar says what the design is:
+
+- **Panel**: the window itself. It is stretched over the canvas when built, with its elements in it.
+- **Popup**: a window of its own size. It starts with an Empty named **Popup**, which holds every other
+  element and is itself the window: it is built where it was drawn on the canvas, at its size. It can be
+  moved, resized and renamed, but not deleted or duplicated, and elements added with nothing selected go
+  in it.
+
+Switching between the two starts a new, empty design of that kind.
+
 ## Saving
 
-The top bar holds the panel's name and four buttons:
+The top bar holds Panel / Popup, the design's name and three buttons:
 
-- **Open**: a new panel, or any saved one.
-- **Templates**: ready-made panels to start from. None ship yet.
-- **Clear**: removes every element, after asking.
+- **Open**: a new design, or any saved one.
+- **Clear**: removes every element (a Popup keeps its Popup element), after asking. Ctrl + Z brings them
+  back.
 - **Save**: asks where to store the panel, as an `EasyUIPanel` asset. The dialog offers the panel's name
   and starts in the folder of the panel being edited, or else in the folder saved to last (remembered per
   project). Saving over another panel asks before replacing it. The panel takes the file's name.
 
 The canvas's size is saved with the panel, so its elements can be anchored to a parent of any size when
 it is built.
+
+Whatever replaces the design being edited - switching Panel / Popup, or a new or saved design from Open -
+asks first when it has changes that aren't saved, and goes ahead at once when it hasn't.
 
 ## Adding a panel to a scene
 
@@ -229,7 +253,8 @@ right-click menu), named after its asset. Choosing one builds the panel:
 - under the selected object when it is inside a canvas, otherwise under the scene's canvas. Without a
   canvas, one is made, with an EventSystem (using the Input System's UI module when the project uses the
   Input System).
-- as an object stretched over its parent, with every element under it. Each element is made the way
+- a Panel as an object stretched over its parent, with every element under it; a Popup as its Popup
+  element, placed where it was drawn, with every other element under it. Each element is made the way
   Unity's own **UI (Canvas)** menu makes its kind, then set up as designed: anchors, pivot, its components'
   settings and the components added to it. Its parts are the objects Unity made for them, set up the same
   way. Toggle labels are TextMeshPro, like every other text.
@@ -260,7 +285,7 @@ Clone or download this repository, then copy its contents into `Assets/Scripts/E
 **1. Add a Canvas to your scene** (`GameObject > UI > Canvas`). EasyUI shows its area, and its size, as the
 space the panel goes in. Without one, the window tells you to add one.
 
-**2. Open `Tools > Easy UI`** and name your panel in the top bar.
+**2. Open `Tools > Easy UI`**, pick Panel or Popup and name your design in the top bar.
 
 **3. Right-click on the canvas** to add elements. Select one to add its children under it. Drag, resize
 and set them up in the inspector on the right.

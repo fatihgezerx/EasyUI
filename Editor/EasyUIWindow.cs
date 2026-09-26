@@ -23,7 +23,9 @@ namespace EasyUI
     /// <item>Hold Shift while moving or resizing to snap to the canvas lines; blue guides show and pull onto
     /// lined-up edges - see <c>EasyUIWindow.Guides.cs</c>.</item>
     /// <item>The selected element's Rect Transform and components are edited in the panel on the right - see
-    /// <c>EasyUIWindow.Inspector.cs</c>. The top bar names, saves and clears the panel.</item>
+    /// <c>EasyUIWindow.Inspector.cs</c>. The top bar picks Panel or Popup, and names, saves and clears the
+    /// design - see <c>EasyUIWindow.Toolbar.cs</c>.</item>
+    /// <item>Ctrl + Z undoes, Ctrl + Y redoes, up to ten steps - see <c>EasyUIWindow.History.cs</c>.</item>
     /// <item>Pan with the middle mouse button (or Alt + left drag), zoom with the scroll wheel, press F to fit
     /// the selection - or, with nothing selected, the canvas - in the view. The round info button in the
     /// bottom-right corner lists all of these - see <c>EasyUIWindow.Help.cs</c>.</item>
@@ -195,6 +197,13 @@ namespace EasyUI
             wantsMouseMove = true;
             EditorApplication.hierarchyChanged += OnHierarchyChanged;
             EasyUIParts.EnsureParts(document);
+            EnsurePopup();
+
+            // A window just opened (not one back from a script reload) starts with nothing unsaved.
+            if (string.IsNullOrEmpty(savedDesign))
+            {
+                MarkSaved();
+            }
         }
 
         private void OnDisable()
@@ -284,6 +293,7 @@ namespace EasyUI
             // Layout components first (they move and size elements), then which labels show, for this event's
             // clicks and drawing alike.
             UpdateLayout();
+            TrackHistory();
             UpdateLabels();
             HandleInput(hasCanvas);
             UpdateCursor(hasCanvas);
@@ -467,10 +477,11 @@ namespace EasyUI
             Repaint();
         }
 
-        // Removes every selected element and everything under them.
+        // Removes every selected element and everything under them - but not a Popup's Popup element, which stays.
         private void DeleteSelection()
         {
             var roots = new List<EasyUINode>(SelectionRoots());
+            roots.RemoveAll(document.IsPopupNode);
             foreach (var root in roots)
             {
                 document.nodes.RemoveAll(other => document.IsUnder(other, root));
@@ -656,10 +667,11 @@ namespace EasyUI
         private static bool IsSelectionCommand(string command) => command is "Duplicate" or "Delete" or "SoftDelete";
 
         // The right-click menu, like Shader Graph's "Create Node": search or browse for an element to add at the
-        // click - under the selected one (a Scroll View's: in its Content), or under the panel when nothing is selected.
+        // click - under the selected one (a Scroll View's: in its Content), or, when nothing is selected, under the
+        // panel - a Popup's Popup element.
         private void ShowAddMenu(Vector2 pointer)
         {
-            var parent = EasyUIParts.ChildParent(document, document.Find(_selectedId));
+            var parent = EasyUIParts.ChildParent(document, document.Find(_selectedId)) ?? document.PopupNode;
             var parentId = parent != null ? parent.id : 0;
             var at = ToCanvas(pointer);
             _createDropdownState ??= new UnityEditor.IMGUI.Controls.AdvancedDropdownState();
