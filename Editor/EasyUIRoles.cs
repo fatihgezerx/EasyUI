@@ -7,7 +7,9 @@ namespace EasyUI
 {
     /// <summary>
     /// What an element is to another system - e.g. an inventory's slot template - so that system can find it in a
-    /// built panel without depending on names. Offered by an <see cref="IEasyUIRoleProvider"/>.
+    /// built panel without depending on names. Offered by an <see cref="IEasyUIRoleProvider"/>. An element can have
+    /// several roles (e.g. a text that is both a prompt's label and translated), as long as none of them
+    /// <see cref="Conflicts"/> with another and each one's <see cref="Requires"/> are there.
     /// </summary>
     public sealed class EasyUIRole
     {
@@ -40,6 +42,18 @@ namespace EasyUI
 
         /// <summary>Whether one element of a panel at most has it; giving it to another then takes it from the first.</summary>
         public bool Unique { get; }
+
+        /// <summary>
+        /// The component the element gets when the panel is built, or null. For a role that is just one component;
+        /// a system that needs more - wiring views to each other - does it in an <see cref="IEasyUIBuildHandler"/>.
+        /// </summary>
+        public Type Component { get; set; }
+
+        /// <summary>Roles an element with this one can't have too (either side saying so is enough).</summary>
+        public IReadOnlyList<string> Conflicts { get; set; } = Array.Empty<string>();
+
+        /// <summary>Roles an element must have before it can have this one (e.g. Clickable needs Slot Template).</summary>
+        public IReadOnlyList<string> Requires { get; set; } = Array.Empty<string>();
 
         /// <summary>The last step of <see cref="MenuPath"/> (e.g. "Slot Template").</summary>
         public string Label
@@ -115,7 +129,7 @@ namespace EasyUI
         {
             foreach (var node in document.nodes)
             {
-                if (node.role == id)
+                if (node.HasRole(id))
                 {
                     return node;
                 }
@@ -130,11 +144,54 @@ namespace EasyUI
             found.Clear();
             foreach (var node in document.nodes)
             {
-                if (node.role == id)
+                if (node.HasRole(id))
                 {
                     found.Add(node);
                 }
             }
+        }
+
+        /// <summary>Whether roles <paramref name="a"/> and <paramref name="b"/> can't be on one element.</summary>
+        public static bool Conflict(EasyUIRole a, EasyUIRole b) => Lists(a.Conflicts, b.Id) || Lists(b.Conflicts, a.Id);
+
+        /// <summary>
+        /// Why <paramref name="node"/> can't be given <paramref name="role"/> - one of its roles conflicts with it,
+        /// or a role it requires is missing - or null when it can.
+        /// </summary>
+        public static string WhyNot(EasyUINode node, EasyUIRole role)
+        {
+            foreach (var held in node.roles)
+            {
+                var other = Find(held);
+                if (other != null && other != role && Conflict(role, other))
+                {
+                    return "conflicts with " + other.Label;
+                }
+            }
+
+            foreach (var required in role.Requires)
+            {
+                if (!node.HasRole(required))
+                {
+                    var needed = Find(required);
+                    return "needs " + (needed != null ? needed.Label : required);
+                }
+            }
+
+            return null;
+        }
+
+        private static bool Lists(IReadOnlyList<string> ids, string id)
+        {
+            foreach (var listed in ids)
+            {
+                if (listed == id)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>Makes the next use find the roles again - e.g. after a role of your own was added or removed.</summary>

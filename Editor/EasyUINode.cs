@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace EasyUI
 {
@@ -22,8 +23,12 @@ namespace EasyUI
         // EasyUIParts; None for an element added by hand.
         public EasyUIPart part;
 
-        // What the element is to another system (e.g. an inventory's slot template), from EasyUIRoles; empty for none.
-        public string role = string.Empty;
+        // What the element is to other systems (e.g. an inventory's slot template), from EasyUIRoles: any number of
+        // role ids, in the order they were given.
+        public List<string> roles = new();
+
+        // The one role an element had before it could have several; moved into `roles` by EasyUIDocument.Upgrade.
+        [SerializeField] private string role = string.Empty;
 
         public Vector2 position;
         public Vector2 size;
@@ -60,6 +65,41 @@ namespace EasyUI
 
         public bool IsPart => part != EasyUIPart.None;
 
+        /// <summary>Whether the element has the role <paramref name="id"/>.</summary>
+        public bool HasRole(string id)
+        {
+            if (string.IsNullOrEmpty(id))
+            {
+                return false;
+            }
+
+            foreach (var held in roles)
+            {
+                if (held == id)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        // Moves the single role of an element saved before it could have several into `roles`.
+        internal void UpgradeRole()
+        {
+            if (string.IsNullOrEmpty(role))
+            {
+                return;
+            }
+
+            if (!HasRole(role))
+            {
+                roles.Add(role);
+            }
+
+            role = string.Empty;
+        }
+
         /// <summary>uGUI's default size for a new <paramref name="type"/>, as its GameObject > UI menu makes it.</summary>
         public static Vector2 DefaultSize(EasyUIElementType type) => type switch
         {
@@ -95,43 +135,35 @@ namespace EasyUI
     }
 
     /// <summary>
-    /// What a design is built as. A <see cref="Panel"/> is a window stretched over the whole canvas, with its
-    /// elements in it. A <see cref="Popup"/> is its Popup element - an Empty made with it, holding every other
-    /// element - which is itself the window.
-    /// </summary>
-    public enum EasyUIDocumentKind
-    {
-        Panel,
-        Popup
-    }
-
-    /// <summary>
     /// A panel being designed: its name and every element in it, as a flat list where each one names its parent.
     /// Held by the <see cref="EasyUIWindow"/> while it is edited, and by an <see cref="EasyUIPanel"/> once saved.
     /// </summary>
     [Serializable]
     public sealed class EasyUIDocument
     {
+        // For a design saved before the canvas's size was kept, when there is no canvas to measure either.
+        internal static readonly Vector2 FallbackCanvasSize = new(1920f, 1080f);
+
         public string panelName = "New Panel";
 
-        // The canvas's size when the panel was last saved: the space element positions are measured in, so a
-        // build can anchor them to a parent of any size. Zero for panels saved before it was kept.
+        // The canvas's size the elements' positions are measured in - the canvas's as it was last drawn in the
+        // editor (which moves the root along when it changes) - so a build can anchor them to a parent of any
+        // size. Zero for panels saved before it was kept.
         public Vector2 canvasSize;
 
-        public EasyUIDocumentKind kind;
-
-        // A Popup's Popup element; 0 in a Panel.
-        public int popupId;
+        // The root element: an Empty holding every other element, which is the window itself - what gets built.
+        // Without a name of its own, it is called after the panel.
+        [FormerlySerializedAs("popupId")] public int rootId;
 
         public List<EasyUINode> nodes = new();
         public int nextId = 1;
         public int editCounter;
 
-        /// <summary>A Popup's Popup element: the window, which holds every other element. Null in a Panel.</summary>
-        public EasyUINode PopupNode => kind == EasyUIDocumentKind.Popup ? Find(popupId) : null;
+        /// <summary>The root element: the window, which holds every other element. Null only before <see cref="Upgrade"/>.</summary>
+        public EasyUINode RootNode => Find(rootId);
 
-        /// <summary>Whether <paramref name="node"/> is a Popup's Popup element, which stays: it can't be deleted or copied.</summary>
-        public bool IsPopupNode(EasyUINode node) => node != null && kind == EasyUIDocumentKind.Popup && node.id == popupId;
+        /// <summary>Whether <paramref name="node"/> is the root element, which stays: it can't be deleted or copied.</summary>
+        public bool IsRootNode(EasyUINode node) => node != null && rootId != 0 && node.id == rootId;
 
         public EasyUINode Find(int id)
         {
@@ -180,6 +212,61 @@ namespace EasyUI
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Brings a design saved by an older Easy UI up to date: an element's single role goes into its roles, and a
+        /// design without a root element - a Panel of the time, whose elements were straight on the canvas - gets
+        /// one stretched over the whole canvas (<paramref name="canvas"/> units), unnamed so it is called after the
+        /// panel, with those elements put in it. A
+
+        /// Popup of the time keeps its Popup element as the root. Returns whether anything changed.
+        /// </summary>
+        public bool Upgrade(Vector2 canvas)
+        {
+            var changed = false;
+            foreach (var node in nodes)
+            {
+                if (node.roles == null)
+                {
+                    node.roles = new List<string>();
+                    changed = true;
+                }
+
+                var count = node.roles.Count;
+                node.UpgradeRole();
+                changed |= node.roles.Count != count;
+            }
+
+            if (RootNode != null)
+            {
+                return changed;
+            }
+
+            var root = new EasyUINode
+            {
+                id = nextId++,
+                type = EasyUIElementType.EmptyObject,
+
+                position = Vector2.zero,
+                size = canvas,
+                anchorH = HorizontalAnchor.Stretch,
+                anchorV = VerticalAnchor.Stretch,
+                editStamp = ++editCounter
+            };
+
+            foreach (var node in nodes)
+            {
+                if (Find(node.parentId) == null)
+                {
+                    node.parentId = root.id;
+                }
+            }
+
+            // First, so it is drawn under - and built before - everything in it.
+            nodes.Insert(0, root);
+            rootId = root.id;
+            return true;
         }
 
         /// <summary>A deep copy, through Unity's editor serializer, which keeps references to sprites, fonts and the like.</summary>

@@ -282,11 +282,12 @@ namespace EasyUI
         // Ctrl + D: a copy of every selected element, with everything under it, one grid step right of and below
         // it - or left of / above it where that would take it out of its parent (or the canvas); level with it on
         // an axis where neither fits. The copies are named like Unity's ("Button (1)") and become the selection.
-        // A Popup's Popup element isn't copied: a Popup has one.
+        // The root element isn't copied: a panel has one.
         private void DuplicateSelection()
         {
             var roots = new List<EasyUINode>(SelectionRoots());
-            roots.RemoveAll(document.IsPopupNode);
+            roots.RemoveAll(document.IsRootNode);
+
             if (roots.Count == 0)
             {
                 return;

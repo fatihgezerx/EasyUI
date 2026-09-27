@@ -20,6 +20,7 @@ namespace EasyUI
         private const float RowGap = 3f;
         private const float PivotGap = 10f;
         private const float ToggleColumn = 72f;
+        private const float RemoveRoleWidth = 20f;
 
         private static readonly Color PanelColor = new(0.21f, 0.21f, 0.21f, 0.97f);
         private static readonly Color PanelBorderColor = new(0.09f, 0.09f, 0.09f, 1f);
@@ -217,41 +218,59 @@ namespace EasyUI
             return $"{kind}  -  layer {document.DepthOf(node)}";
         }
 
-        // What the element is to another system (see EasyUIRoles.cs): a menu of the roles that fit its type only -
-        // text roles on a Text, image roles on an Image... - and Add Role..., which makes a role of your own from a
-        // script. A unique role is held by one element at most, so picking it here takes it from any other.
+        // What the element is to other systems (see EasyUIRoles.cs): its roles, one per line with a cross that takes
+        // it off, and Add Role - a menu of the roles that fit its type only (text roles on a Text, image roles on an
+        // Image...), and Add Role..., which makes a role of your own from a script. An element can have several
+        // roles; one that conflicts with a role it has, or needs one it hasn't, is shown but can't be picked. A
+        // unique role is held by one element at most, so picking it here takes it from any other.
         private void DrawRoleRow(EasyUINode node)
         {
             GUILayout.Space(4f);
-            var role = EasyUIRoles.Find(node.role);
             var row = EditorGUILayout.GetControlRect();
-            var field = EditorGUI.PrefixLabel(row, new GUIContent("Role", "What this element is to another system, e.g. the inventory's slot template."));
-            var label = role != null ? role.Label : string.IsNullOrEmpty(node.role) ? "None" : $"Missing ({node.role})";
-            if (EditorGUI.DropdownButton(field, new GUIContent(label, role != null ? role.MenuPath : null), FocusType.Passive))
+            var field = EditorGUI.PrefixLabel(row, new GUIContent("Roles", "What this element is to other systems, e.g. the inventory's slot template. It can have several."));
+            if (EditorGUI.DropdownButton(field, new GUIContent("Add Role"), FocusType.Passive))
             {
                 ShowRoleMenu(node, field);
             }
 
-            if (role != null && !string.IsNullOrEmpty(role.Description))
+            foreach (var roleId in node.roles)
             {
-                EditorGUILayout.LabelField(role.Description, EditorStyles.wordWrappedMiniLabel);
+                var role = EasyUIRoles.Find(roleId);
+                var line = EditorGUILayout.GetControlRect();
+                var remove = new Rect(line.xMax - RemoveRoleWidth, line.y, RemoveRoleWidth, line.height);
+                var label = new Rect(line.x, line.y, line.width - RemoveRoleWidth - 4f, line.height);
+                var text = role != null ? role.MenuPath : $"Missing ({roleId})";
+                EditorGUI.LabelField(label, new GUIContent(text, role != null ? role.Description : "Its system (or script) is no longer in the project."),
+                    role != null ? EditorStyles.boldLabel : EditorStyles.miniLabel);
+
+                if (GUI.Button(remove, new GUIContent("×", "Take this role off"), EditorStyles.miniButton))
+                {
+                    RemoveRole(node, roleId);
+
+                    // The list just changed: end this event before the rest of it is laid out.
+                    Repaint();
+                    GUIUtility.ExitGUI();
+                }
+
+                if (role != null && !string.IsNullOrEmpty(role.Description))
+                {
+                    EditorGUILayout.LabelField(role.Description, EditorStyles.wordWrappedMiniLabel);
+                }
             }
         }
 
-        // None and Add Role... first, then the systems' roles that fit the element, then your own (see
-        // EasyUICustomRoles.cs), which fit every element.
+        // Add Role... first, then the systems' roles that fit the element, then your own (see EasyUICustomRoles.cs),
+        // which fit every element. The roles it has are ticked; picking one of them takes it off.
         private void ShowRoleMenu(EasyUINode node, Rect field)
         {
             var id = node.id;
             var screen = GUIUtility.GUIToScreenRect(field);
             var menu = new GenericMenu();
-            menu.AddItem(new GUIContent("None"), string.IsNullOrEmpty(node.role), () => SetRole(id, string.Empty));
-            menu.AddItem(new GUIContent("Add Role..."), false, () => EasyUIAddRoleWindow.Open(screen, roleId => SetRole(id, roleId)));
+            menu.AddItem(new GUIContent("Add Role..."), false, () => EasyUIAddRoleWindow.Open(screen, roleId => AddRole(id, roleId)));
 
-            var separated = false;
             foreach (var custom in new[] { false, true })
             {
-                separated = false;
+                var separated = false;
                 foreach (var role in EasyUIRoles.All)
                 {
                     if (EasyUICustomRoles.IsCustom(role.Id) != custom || !role.Fits(node.type))
@@ -266,37 +285,84 @@ namespace EasyUI
                     }
 
                     var roleId = role.Id;
+                    if (node.HasRole(roleId))
+                    {
+                        menu.AddItem(new GUIContent(role.MenuPath), true, () => RemoveRole(document.Find(id), roleId));
+                        continue;
+                    }
+
+                    var whyNot = EasyUIRoles.WhyNot(node, role);
+                    if (whyNot != null)
+                    {
+                        menu.AddDisabledItem(new GUIContent($"{role.MenuPath}  ({whyNot})"));
+                        continue;
+                    }
+
                     var holder = role.Unique ? EasyUIRoles.FindNode(document, roleId) : null;
-                    var title = holder != null && holder != node ? $"{role.MenuPath}  (on {NameOf(holder)})" : role.MenuPath;
-                    menu.AddItem(new GUIContent(title), node.role == roleId, () => SetRole(id, roleId));
+                    var title = holder != null ? $"{role.MenuPath}  (on {NameOf(holder)})" : role.MenuPath;
+                    menu.AddItem(new GUIContent(title), false, () => AddRole(id, roleId));
                 }
             }
 
             menu.DropDown(field);
         }
 
-        private void SetRole(int id, string roleId)
+        private void AddRole(int id, string roleId)
         {
             var node = document.Find(id);
-            if (node == null)
+            var role = EasyUIRoles.Find(roleId);
+            if (node == null || node.HasRole(roleId) || (role != null && EasyUIRoles.WhyNot(node, role) != null))
             {
                 return;
             }
 
-            var role = EasyUIRoles.Find(roleId);
             if (role != null && role.Unique)
             {
                 foreach (var other in document.nodes)
                 {
-                    if (other.role == roleId)
+                    if (other != node && other.HasRole(roleId))
                     {
-                        other.role = string.Empty;
+                        RemoveRole(other, roleId);
                     }
                 }
             }
 
-            node.role = roleId;
+            node.roles.Add(roleId);
             Repaint();
+        }
+
+        // Takes the role off, and with it every role of the element that needed it (and those that needed them).
+        private void RemoveRole(EasyUINode node, string roleId)
+        {
+            if (node == null || !node.roles.Remove(roleId))
+            {
+                return;
+            }
+
+            for (var i = 0; i < node.roles.Count; i++)
+            {
+                var role = EasyUIRoles.Find(node.roles[i]);
+                if (role != null && MissesRequired(node, role))
+                {
+                    node.roles.RemoveAt(i);
+                    i = -1;
+                }
+            }
+
+            Repaint();
+        }
+
+        private static bool MissesRequired(EasyUINode node, EasyUIRole role)
+        {
+            foreach (var required in role.Requires)
+            {
+                if (!node.HasRole(required))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         // On a composite element or one of its parts: a menu of the element and every part of it, to select one

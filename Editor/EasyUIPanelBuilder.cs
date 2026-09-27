@@ -16,21 +16,20 @@ namespace EasyUI
     /// its elements by role (see <see cref="Build"/>).
     /// </summary>
     /// <remarks>
-    /// A Panel becomes an object stretched over its parent - the selected object when it is inside a canvas,
-    /// otherwise the scene's canvas, made (with an EventSystem) if there is none - with every element under it. A
-    /// Popup becomes its Popup element, placed in that parent where it was drawn on the canvas, with every other
-    /// element under it.
+    /// A panel becomes its root element, placed in its parent - the selected object when it is inside a canvas,
+    /// otherwise the scene's canvas, made (with an EventSystem) if there is none - as it was drawn on the canvas
+    /// (a new root is stretched over all of it), with every other element under it. The root is named after the
+    /// panel unless it was named in Easy UI.
     /// Each element is made the way Unity's own <c>GameObject &gt; UI (Canvas)</c> menu makes its kind, then set up
     /// as it was designed: anchors, pivot, the settings of its components and the components added to it. Parts
     /// (a Scroll View's Viewport, a Button's Text...) are the objects Unity made for them, set up the same way. The
-    /// objects keep no link to the panel asset; from then on they are the scene's own.
+    /// objects keep no link to the panel asset; from then on they are the scene's own. Every element gets its roles'
+    /// components (see <see cref="EasyUIRole.Component"/>), then every <see cref="IEasyUIBuildHandler"/> sets up
+    /// what it knows.
     /// </remarks>
     public static class EasyUIPanelBuilder
     {
         private const string SkinPath = "UI/Skin/";
-
-        // For panels saved before the canvas's size was kept, when the parent has no size either.
-        private static readonly Vector2 FallbackCanvasSize = new(1920f, 1080f);
 
         internal static void Create(string guid, MenuCommand command)
         {
@@ -43,27 +42,53 @@ namespace EasyUI
                 return;
             }
 
-            var undoName = "Create " + panel.name;
             Undo.IncrementCurrentGroup();
-            Undo.SetCurrentGroupName(undoName);
-
-            var root = Build(panel, ParentFor(command.context as GameObject), null);
-            Undo.RegisterCreatedObjectUndo(root, undoName);
-            Selection.activeGameObject = root;
+            Undo.SetCurrentGroupName("Create " + panel.name);
+            Selection.activeGameObject = Create(panel, ParentFor(command.context as GameObject));
         }
 
         /// <summary>
-        /// Builds <paramref name="panel"/> under <paramref name="parent"/> and returns its root object: for a Panel,
-        /// one named after the panel; for a Popup, its Popup element. When <paramref name="built"/> is given, it is filled with every element's object by the
-        /// element's id - parts included - so a caller can find elements by role
-        /// (<see cref="EasyUIRoles.FindNode"/>). Nothing is recorded for undo: the caller registers the root.
+        /// Builds <paramref name="panel"/> under <paramref name="parent"/> as the Easy UI menu does - its roles'
+        /// components added, then every <see cref="IEasyUIBuildHandler"/> run - recorded for undo, and returns its
+        /// root object.
         /// </summary>
-        public static GameObject Build(EasyUIPanel panel, RectTransform parent, Dictionary<int, GameObject> built)
+        public static GameObject Create(EasyUIPanel panel, RectTransform parent)
         {
-            // A copy, so a panel saved before parts existed gets them without the asset changing.
+            var document = Prepare(panel);
+            var built = new Dictionary<int, GameObject>();
+            var root = Build(document, panel.name, parent, built);
+
+            var build = new EasyUIBuild(panel, document, root, built);
+            EasyUIBuildHandlers.Run(build);
+
+            var undoName = "Create " + panel.name;
+            Undo.RegisterCreatedObjectUndo(root, undoName);
+            foreach (var moved in build.MovedOut)
+            {
+                Undo.RegisterCreatedObjectUndo(moved, undoName);
+            }
+
+            return root;
+        }
+
+        /// <summary>
+        /// Builds <paramref name="panel"/> under <paramref name="parent"/> and returns its root object, with its roles'
+        /// components but without running the <see cref="IEasyUIBuildHandler"/>s. When <paramref name="built"/> is
+        /// given, it is filled with every element's object by the element's id - parts included - so a caller can
+        /// find elements by role (<see cref="EasyUIRoles.FindNode"/>). Nothing is recorded for undo: the caller
+        /// registers the root.
+        /// </summary>
+        public static GameObject Build(EasyUIPanel panel, RectTransform parent, Dictionary<int, GameObject> built) =>
+            Build(Prepare(panel), panel.name, parent, built ?? new Dictionary<int, GameObject>());
+
+        // A copy, so a panel saved by an older Easy UI is brought up to date without the asset changing.
+        private static EasyUIDocument Prepare(EasyUIPanel panel)
+        {
             var document = panel.Document.Clone();
+            var canvas = document.canvasSize.x > 0f && document.canvasSize.y > 0f ? document.canvasSize : EasyUIDocument.FallbackCanvasSize;
+            document.Upgrade(canvas);
             EasyUIParts.EnsureParts(document);
-            return Build(document, panel.name, parent, built ?? new Dictionary<int, GameObject>());
+            return document;
         }
 
         /// <summary>
@@ -104,29 +129,17 @@ namespace EasyUI
 
             if (designSize.x <= 0f || designSize.y <= 0f)
             {
-                designSize = FallbackCanvasSize;
+                designSize = EasyUIDocument.FallbackCanvasSize;
             }
 
             var ui = new ControlSprites();
             var canvasRect = new Rect(Vector2.zero, designSize);
             var children = ChildrenByParent(document);
-            GameObject root;
-
-            var popup = document.PopupNode;
-            if (popup != null)
+            var rootNode = document.RootNode;
+            var root = BuildElement(rootNode, parent, canvasRect, children, ui, built);
+            if (string.IsNullOrEmpty(rootNode.name))
             {
-                root = BuildElement(popup, parent, canvasRect, children, ui, built);
-            }
-            else
-            {
-                root = new GameObject(name, typeof(RectTransform));
-                var rootRect = (RectTransform)root.transform;
-                rootRect.SetParent(parent, false);
-                rootRect.anchorMin = Vector2.zero;
-                rootRect.anchorMax = Vector2.one;
-                rootRect.offsetMin = Vector2.zero;
-                rootRect.offsetMax = Vector2.zero;
-                BuildChildren(0, rootRect, canvasRect, children, ui, built);
+                root.name = name;
             }
 
             GameObjectUtility.EnsureUniqueNameForSibling(root);
@@ -141,10 +154,10 @@ namespace EasyUI
         }
 
         // Each element under its parent's id, in the order they were added; elements whose parent is gone count
-        // as the panel's own (0), as the window draws them - in a Popup, as its Popup element's.
+        // as the root's, as the window draws them.
         private static Dictionary<int, List<EasyUINode>> ChildrenByParent(EasyUIDocument document)
         {
-            var popup = document.PopupNode;
+            var root = document.RootNode;
             var ids = new HashSet<int>();
             foreach (var node in document.nodes)
             {
@@ -155,9 +168,9 @@ namespace EasyUI
             foreach (var node in document.nodes)
             {
                 var parentId = ids.Contains(node.parentId) ? node.parentId : 0;
-                if (parentId == 0 && popup != null && node != popup)
+                if (parentId == 0 && node != root)
                 {
-                    parentId = popup.id;
+                    parentId = root.id;
                 }
 
                 if (!children.TryGetValue(parentId, out var list))
@@ -217,7 +230,7 @@ namespace EasyUI
             }
 
             AddComponents(node, element);
-            AddRoleScript(node, element);
+            AddRoleComponents(node, element);
             built[node.id] = element;
 
             BuildChildren(node.id, rect, node.Rect, children, ui, built);
@@ -659,24 +672,35 @@ namespace EasyUI
             }
         }
 
-        // A role of your own (see EasyUICustomRoles.cs) adds its script.
-        private static void AddRoleScript(EasyUINode node, GameObject element)
+        // Each role's component: a role of your own (see EasyUICustomRoles.cs) adds its script, a system's role its
+        // Component, if it has one. A system's role whose system is gone does nothing.
+        private static void AddRoleComponents(EasyUINode node, GameObject element)
         {
-            if (!EasyUICustomRoles.IsCustom(node.role))
+            foreach (var roleId in node.roles)
             {
-                return;
-            }
+                Type type;
+                if (EasyUICustomRoles.IsCustom(roleId))
+                {
+                    type = EasyUICustomRoles.ComponentOf(roleId);
+                    if (type == null)
+                    {
+                        Debug.LogWarning($"[EasyUI] '{element.name}' has a role whose script is gone or can't be added: {roleId}.", element);
+                        continue;
+                    }
+                }
+                else
+                {
+                    type = EasyUIRoles.Find(roleId)?.Component;
+                    if (type == null)
+                    {
+                        continue;
+                    }
+                }
 
-            var type = EasyUICustomRoles.ComponentOf(node.role);
-            if (type == null)
-            {
-                Debug.LogWarning($"[EasyUI] '{element.name}' has a role whose script is gone or can't be added: {node.role}.", element);
-                return;
-            }
-
-            if (element.GetComponent(type) == null)
-            {
-                element.AddComponent(type);
+                if (element.GetComponent(type) == null)
+                {
+                    element.AddComponent(type);
+                }
             }
         }
 

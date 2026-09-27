@@ -240,12 +240,28 @@ namespace EasyUI
             return null;
         }
 
-        // The name, then the role in brackets, then what is wrong.
+        // The name, then the roles in brackets, then what is wrong.
         private string LabelText(EasyUINode node, string problem)
         {
-            var role = EasyUIRoles.Find(node.role);
-            var text = role != null ? $"{NameOf(node)}  [{role.Label}]" : NameOf(node);
+            var text = NameOf(node);
+            var first = true;
+            foreach (var roleId in node.roles)
+            {
+                var role = EasyUIRoles.Find(roleId);
+                if (role != null)
+                {
+                    text += (first ? "  [" : ", ") + role.Label;
+                    first = false;
+                }
+            }
+
+            if (!first)
+            {
+                text += "]";
+            }
+
             return problem != null ? $"{text}  -  {problem}" : text;
+
         }
 
         #endregion
@@ -317,8 +333,16 @@ namespace EasyUI
             _renamingId = 0;
             if (node != null)
             {
+                // The root, left nameless (or named like the panel), keeps being called after the panel.
                 var name = _renameText.Trim();
-                node.name = name.Length > 0 ? name : EasyUINode.DefaultName(node.type);
+                if (document.IsRootNode(node))
+                {
+                    node.name = name == document.panelName.Trim() ? string.Empty : name;
+                }
+                else
+                {
+                    node.name = name.Length > 0 ? name : EasyUINode.DefaultName(node.type);
+                }
             }
 
             EndTextEditing();
@@ -330,7 +354,7 @@ namespace EasyUI
         {
             var node = document.Find(_renamingId);
             _renamingId = 0;
-            if (node != null && string.IsNullOrEmpty(node.name))
+            if (node != null && string.IsNullOrEmpty(node.name) && !document.IsRootNode(node))
             {
                 node.name = EasyUINode.DefaultName(node.type);
             }

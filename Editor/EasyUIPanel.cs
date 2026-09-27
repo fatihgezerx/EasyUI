@@ -10,7 +10,14 @@ namespace EasyUI
     {
         [SerializeField] private EasyUIDocument document = new();
 
+        /// <summary>The design, always up to date (see <see cref="EasyUIDocument.Upgrade"/>) - the asset itself changes only when saved again.</summary>
         public EasyUIDocument Document => document;
+
+        private void OnEnable()
+        {
+            var canvas = document.canvasSize.x > 0f && document.canvasSize.y > 0f ? document.canvasSize : EasyUIDocument.FallbackCanvasSize;
+            document.Upgrade(canvas);
+        }
 
         internal void Store(EasyUIDocument design) => document = design.Clone();
     }

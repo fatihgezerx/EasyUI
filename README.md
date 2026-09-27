@@ -30,12 +30,13 @@ builds.
   Layout Group (one at most), Layout Element, Mask, Rect Mask 2D
 - Parts: a Scroll View's Viewport, Content and scrollbars, a Button's Text, a Toggle's Background, Checkmark
   and Label, and a Dropdown's Label and Arrow are elements of their own, to style and extend
-- Roles: other systems (e.g. Inventory System) can offer roles, so they find your elements without names
+- Roles: other systems (e.g. Inventory System) can offer roles, so they find your elements without names -
+  several per element, and each can add its component or have its system set the element up when built
 - Layers: an element's layer is how deep it sits, and elements on the same layer can't overlap
 - Smart guides that pull edges and middles onto lined-up elements, and Shift to snap to the canvas grid
 - Multi-selection, box selection, duplicate (Ctrl + D) and delete, with children
 - Undo (Ctrl + Z) and redo (Ctrl + Y), up to ten steps
-- Panels and Popups: a Panel is a window over the whole canvas, a Popup a window of its own size
+- A root element for every panel: the window itself, stretched over the canvas, holding everything else
 - Inline renaming with a pencil icon, and names that fade out when they don't fit
 - A red outline for anything out of place: off the canvas, outside its parent, or over another element
   on its layer
@@ -65,7 +66,7 @@ builds.
 
 The round info button in the bottom-right corner of the workspace lists these too.
 
-A new element goes under the selected one, or under the panel itself when nothing is selected, and asks
+A new element goes under the selected one, or under the root element when nothing is selected, and asks
 for its name right away. Enter or the check button keeps the name, Escape leaves it as it was. The first
 press on an element only selects it, so an element never moves by accident. A drag always starts from a
 selected element.
@@ -89,8 +90,8 @@ text field being typed in keeps its own. A new or opened design starts a history
 
 ## Layers
 
-An element's layer is how deep it sits: 1 for the panel's own children, 2 for theirs, and so on. It is
-shown in a small badge before the element's name.
+An element's layer is how deep it sits: 1 for the root element, 2 for its children, and so on. It is shown
+in a small badge before the element's name.
 
 Elements on different layers overlap freely, since a child sits inside its parent. Elements on the same
 layer may not: a drag or a resize stops where it would run into another one, and both show yellow edges
@@ -107,7 +108,7 @@ A child always stays inside its parent. Moving or resizing an element takes its 
 RectTransform's anchors do: an anchored side keeps its distance from its anchor, and a stretched side keeps
 its distance from the parent's edge. A child stretched across its parent narrows with it.
 
-A drag never takes an element out of its parent, or out of the canvas for the panel's own elements. One
+A drag never takes an element out of its parent, or the root element out of the canvas. One
 that ends up outside anyway (its parent shrunk, or its fields put it there) turns red.
 
 ## Guides and snapping
@@ -192,21 +193,33 @@ becomes its Text part, and what was under a Scroll View moves into its Content.
 ## Roles
 
 Another system can tell EasyUI what it needs from a panel by offering **roles**, e.g. Inventory System's
-*Slot Container* or *Examine View*, listed under the system's name (*Inventory*). The inspector then shows a
-**Role** menu at the top: pick what the
-selected element is to that system. The menu lists only the roles that fit the element's type (a text's
-roles on a Text, an image's on an Image...), plus your own roles (below). The role shows in
-brackets after the element's name. Most roles are held by one element at most, so giving one to another
-takes it from the first; a system may offer roles several elements share, telling them apart by where they
-are (e.g. Inventory System's *Item Icon*: in a slot, in a notification, or on its own).
+*Slot Container* or *Examine View*, listed under the system's name (*Inventory*). The inspector then shows
+the element's **Roles** at the top, each with a cross that takes it off, and **Add Role**: a menu of the
+roles that fit the element's type (a text's roles on a Text, an image's on an Image...), plus your own roles
+(below). The roles show in brackets after the element's name.
 
-The system then builds the panel and finds its elements by role, never by name, so they can be named
-freely. EasyUI never references those systems: they implement `IEasyUIRoleProvider`, and build with
-`EasyUIPanelBuilder.Build`, which returns every element's object by its id.
+An element can have several roles - e.g. a text that is both a prompt's label and excluded from
+translation, or a slot that is both clickable and draggable. A role may **conflict** with another (the two
+can't be on one element) or **require** one (e.g. *Clickable Slot* needs *Slot Template*): the menu shows
+such a role greyed out, saying why, and taking a role off also takes off those that required it. Most
+roles are held by one element at most, so giving one to another takes it from the first; a system may
+offer roles several elements share, telling them apart by where they are (e.g. Inventory System's *Item
+Icon*: in a slot, in a notification, or on its own).
+
+When the panel is built from **GameObject > UI (Canvas) > Easy UI**, each element gets its roles'
+components, then every system sets up what it knows - its views, wired to each other - by its roles, never
+by name, so elements can be named freely. EasyUI never references those systems:
+
+- `IEasyUIRoleProvider` offers roles (`EasyUIRole`: id, menu path, description, element types, unique or
+  not, and optionally a `Component` to add, `Conflicts` and `Requires`).
+- `IEasyUIBuildHandler` is told of every build (`EasyUIBuild`: the design, the root, the canvas, and the
+  object of every element by role), after the roles' components were added.
+- `EasyUIPanelBuilder.Create` builds a panel as the menu does; `EasyUIPanelBuilder.Build` builds it without
+  the handlers and returns every element's object by its id.
 
 ### Roles of your own
 
-**Add Role...**, right under None in the Role menu, makes a role from a script: pick the script (a
+**Add Role...**, at the top of the Add Role menu, makes a role from a script: pick the script (a
 MonoBehaviour), optionally a **Group**, and press **Apply**. The role is named after the script's class,
 given to the element, and listed in the Role menu of every element from then on (they are kept per project,
 in `ProjectSettings/EasyUIRoles.asset`). A group is a submenu of the Role menu: type a new one, or pick one
@@ -216,25 +229,24 @@ component. Several elements can share one, and the same window lists the roles m
 them. So a system of your own - an inventory you wrote yourself, say - can mark its elements without any
 code for EasyUI.
 
-## Panels and Popups
+## The root element
 
-The dropdown at the left of the top bar says what the design is:
+Every design starts with its **root element**: an Empty stretched over the whole canvas, which holds every
+other element and is itself the window - what gets built. It is where a system's window role goes (e.g.
+Inventory System's *Inventory Panel*). It can be moved, resized, re-anchored, renamed and given roles, but
+not deleted or duplicated, and elements added with nothing selected go in it. Without a name of its own, it
+is called after the panel. When the canvas changes size (e.g. the Game view's), it follows as its anchors
+say - stretched, it keeps covering the canvas - and everything in it follows it.
 
-- **Panel**: the window itself. It is stretched over the canvas when built, with its elements in it.
-- **Popup**: a window of its own size. It starts with an Empty named **Popup**, which holds every other
-  element and is itself the window: it is built where it was drawn on the canvas, at its size. It can be
-  moved, resized and renamed, but not deleted or duplicated, and elements added with nothing selected go
-  in it.
-
-Switching between the two starts a new, empty design of that kind.
+Panels saved by an older EasyUI get one the first time they are opened or built: a Panel's elements are
+put in a new root over the whole canvas, and a Popup's Popup element becomes its root.
 
 ## Saving
 
-The top bar holds Panel / Popup, the design's name and three buttons:
+The top bar holds the design's name and three buttons:
 
 - **Open**: a new design, or any saved one.
-- **Clear**: removes every element (a Popup keeps its Popup element), after asking. Ctrl + Z brings them
-  back.
+- **Clear**: removes every element but the root, after asking. Ctrl + Z brings them back.
 - **Save**: asks where to store the panel, as an `EasyUIPanel` asset. The dialog offers the panel's name
   and starts in the folder of the panel being edited, or else in the folder saved to last (remembered per
   project). Saving over another panel asks before replacing it. The panel takes the file's name.
@@ -242,8 +254,8 @@ The top bar holds Panel / Popup, the design's name and three buttons:
 The canvas's size is saved with the panel, so its elements can be anchored to a parent of any size when
 it is built.
 
-Whatever replaces the design being edited - switching Panel / Popup, or a new or saved design from Open -
-asks first when it has changes that aren't saved, and goes ahead at once when it hasn't.
+Whatever replaces the design being edited - a new or saved design from Open - asks first when it has
+changes that aren't saved, and goes ahead at once when it hasn't.
 
 ## Adding a panel to a scene
 
@@ -253,11 +265,13 @@ right-click menu), named after its asset. Choosing one builds the panel:
 - under the selected object when it is inside a canvas, otherwise under the scene's canvas. Without a
   canvas, one is made, with an EventSystem (using the Input System's UI module when the project uses the
   Input System).
-- a Panel as an object stretched over its parent, with every element under it; a Popup as its Popup
-  element, placed where it was drawn, with every other element under it. Each element is made the way
+- as its root element, placed where it was drawn (a new root: stretched over its parent), with every
+  other element under it. Each element is made the way
   Unity's own **UI (Canvas)** menu makes its kind, then set up as designed: anchors, pivot, its components'
   settings and the components added to it. Its parts are the objects Unity made for them, set up the same
   way. Toggle labels are TextMeshPro, like every other text.
+- each element with its roles' components; then every system with roles in the panel sets it up (see
+  Roles).
 - in one undo step.
 
 The built objects keep no link to the panel asset: from then on they are the scene's own, so add your
@@ -285,7 +299,7 @@ Clone or download this repository, then copy its contents into `Assets/Scripts/E
 **1. Add a Canvas to your scene** (`GameObject > UI > Canvas`). EasyUI shows its area, and its size, as the
 space the panel goes in. Without one, the window tells you to add one.
 
-**2. Open `Tools > Easy UI`**, pick Panel or Popup and name your design in the top bar.
+**2. Open `Tools > Easy UI`** and name your design in the top bar.
 
 **3. Right-click on the canvas** to add elements. Select one to add its children under it. Drag, resize
 and set them up in the inspector on the right.

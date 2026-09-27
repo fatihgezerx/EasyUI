@@ -23,8 +23,8 @@ namespace EasyUI
     /// <item>Hold Shift while moving or resizing to snap to the canvas lines; blue guides show and pull onto
     /// lined-up edges - see <c>EasyUIWindow.Guides.cs</c>.</item>
     /// <item>The selected element's Rect Transform and components are edited in the panel on the right - see
-    /// <c>EasyUIWindow.Inspector.cs</c>. The top bar picks Panel or Popup, and names, saves and clears the
-    /// design - see <c>EasyUIWindow.Toolbar.cs</c>.</item>
+    /// <c>EasyUIWindow.Inspector.cs</c>. The top bar names, opens, saves and clears the design - see
+    /// <c>EasyUIWindow.Toolbar.cs</c>.</item>
     /// <item>Ctrl + Z undoes, Ctrl + Y redoes, up to ten steps - see <c>EasyUIWindow.History.cs</c>.</item>
     /// <item>Pan with the middle mouse button (or Alt + left drag), zoom with the scroll wheel, press F to fit
     /// the selection - or, with nothing selected, the canvas - in the view. The round info button in the
@@ -196,8 +196,8 @@ namespace EasyUI
             titleContent = new GUIContent(Title);
             wantsMouseMove = true;
             EditorApplication.hierarchyChanged += OnHierarchyChanged;
+            EnsureRoot();
             EasyUIParts.EnsureParts(document);
-            EnsurePopup();
 
             // A window just opened (not one back from a script reload) starts with nothing unsaved.
             if (string.IsNullOrEmpty(savedDesign))
@@ -251,6 +251,7 @@ namespace EasyUI
             var canvas = FindCanvas();
             _canvasSize = CanvasSizeOf(canvas);
             _drawnCanvasSize = _canvasSize;
+            FollowCanvas();
             UpdateGridSteps();
             _drawnCanvasId = canvas != null ? canvas.GetInstanceID() : 0;
 
@@ -477,11 +478,11 @@ namespace EasyUI
             Repaint();
         }
 
-        // Removes every selected element and everything under them - but not a Popup's Popup element, which stays.
+        // Removes every selected element and everything under them - but not the root element, which stays.
         private void DeleteSelection()
         {
             var roots = new List<EasyUINode>(SelectionRoots());
-            roots.RemoveAll(document.IsPopupNode);
+            roots.RemoveAll(document.IsRootNode);
             foreach (var root in roots)
             {
                 document.nodes.RemoveAll(other => document.IsUnder(other, root));
@@ -668,10 +669,10 @@ namespace EasyUI
 
         // The right-click menu, like Shader Graph's "Create Node": search or browse for an element to add at the
         // click - under the selected one (a Scroll View's: in its Content), or, when nothing is selected, under the
-        // panel - a Popup's Popup element.
+        // root element.
         private void ShowAddMenu(Vector2 pointer)
         {
-            var parent = EasyUIParts.ChildParent(document, document.Find(_selectedId)) ?? document.PopupNode;
+            var parent = EasyUIParts.ChildParent(document, document.Find(_selectedId)) ?? document.RootNode;
             var parentId = parent != null ? parent.id : 0;
             var at = ToCanvas(pointer);
             _createDropdownState ??= new UnityEditor.IMGUI.Controls.AdvancedDropdownState();
@@ -1027,8 +1028,12 @@ namespace EasyUI
             return IsInConflict(node, out var other) ? $"overlaps {NameOf(other)} on layer {document.DepthOf(node)}" : null;
         }
 
+        // A nameless root is called after the panel, as it is built.
         private string NameOf(EasyUINode node) =>
-            string.IsNullOrEmpty(node.name) ? EasyUINode.DefaultName(node.type) : node.name;
+            !string.IsNullOrEmpty(node.name) ? node.name
+            : document.IsRootNode(node) ? document.panelName
+            : EasyUINode.DefaultName(node.type);
+
 
         // The pivot, as a ring like the Sprite Editor's (pivot y counts up, as in Unity).
         private void DrawPivot(Rect rect, Vector2 pivot)

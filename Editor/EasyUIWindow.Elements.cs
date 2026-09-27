@@ -144,7 +144,7 @@ namespace EasyUI
 
             text.color = EditorGUILayout.ColorField("Vertex Color", text.color);
             Gap();
-            text.alignment = (TextAlignmentOptions)EnumRow("Alignment", text.alignment);
+            text.alignment = AlignmentRow(text.alignment);
             text.wrapping = (TextWrappingModes)EnumRow("Wrapping", text.wrapping);
             text.overflow = (TextOverflowModes)EnumRow("Overflow", text.overflow);
             ToggleRow("Rich Text", ref text.richText);
@@ -373,6 +373,61 @@ namespace EasyUI
             var result = EditorGUILayout.EnumPopup(label, value);
             Gap();
             return result;
+        }
+
+        private static readonly HorizontalAlignmentOptions[] HorizontalAlignments =
+            { HorizontalAlignmentOptions.Left, HorizontalAlignmentOptions.Center, HorizontalAlignmentOptions.Right };
+
+        private static readonly VerticalAlignmentOptions[] VerticalAlignments =
+            { VerticalAlignmentOptions.Top, VerticalAlignmentOptions.Middle, VerticalAlignmentOptions.Bottom };
+
+        private static GUIContent[] _horizontalAlignmentIcons;
+        private static GUIContent[] _verticalAlignmentIcons;
+
+        // A text's alignment as TextMeshPro's own Inspector shows it, kept to what is needed: Left / Center / Right,
+        // then Top / Middle / Bottom, in one strip of six buttons sharing the field's width. A TextMeshPro alignment
+        // is one of each, combined.
+        // (One set otherwise - Justified, Baseline... - shows no button of its group pressed until one is picked.)
+        private static TextAlignmentOptions AlignmentRow(TextAlignmentOptions alignment)
+        {
+            _horizontalAlignmentIcons ??= new[]
+            {
+                EditorGUIUtility.IconContent("GUISystem/align_horizontally_left", "|Left"),
+                EditorGUIUtility.IconContent("GUISystem/align_horizontally_center", "|Center"),
+                EditorGUIUtility.IconContent("GUISystem/align_horizontally_right", "|Right")
+            };
+            _verticalAlignmentIcons ??= new[]
+            {
+                EditorGUIUtility.IconContent("GUISystem/align_vertically_top", "|Top"),
+                EditorGUIUtility.IconContent("GUISystem/align_vertically_center", "|Middle"),
+                EditorGUIUtility.IconContent("GUISystem/align_vertically_bottom", "|Bottom")
+            };
+
+            var horizontal = (HorizontalAlignmentOptions)((int)alignment & 0xFF);
+            var vertical = (VerticalAlignmentOptions)((int)alignment & 0xFF00);
+
+            var field = EditorGUI.PrefixLabel(EditorGUILayout.GetControlRect(), new GUIContent("Alignment"));
+            var button = new Rect(field.x, field.y, field.width / 6f, field.height);
+            for (var i = 0; i < 6; i++)
+            {
+                var style = i == 0 ? EditorStyles.miniButtonLeft : i == 5 ? EditorStyles.miniButtonRight : EditorStyles.miniButtonMid;
+                if (i < 3)
+                {
+                    if (GUI.Toggle(button, horizontal == HorizontalAlignments[i], _horizontalAlignmentIcons[i], style))
+                    {
+                        horizontal = HorizontalAlignments[i];
+                    }
+                }
+                else if (GUI.Toggle(button, vertical == VerticalAlignments[i - 3], _verticalAlignmentIcons[i - 3], style))
+                {
+                    vertical = VerticalAlignments[i - 3];
+                }
+
+                button.x += button.width;
+            }
+
+            Gap();
+            return (TextAlignmentOptions)((int)horizontal | (int)vertical);
         }
 
         private static string TextRow(string label, string value)
