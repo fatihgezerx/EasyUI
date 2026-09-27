@@ -102,6 +102,20 @@ An element with a **Layout Element** whose **Ignore Layout** is ticked is out of
 the others on its layer - e.g. a background image stretched under the children of a layout group - and never
 stops a drag. It still stays inside its parent.
 
+## Hierarchy
+
+The panel on the left is always open and lists every element as a tree, like Unity's Hierarchy: each level one
+step in from its parent, a foldout arrow on those that hold children. Drag its right edge to make it as wide as
+you need; it scrolls both ways, so a deep tree is never cut off. Clicking a row selects the element (Ctrl + click
+adds or removes it, a double click frames it); selecting one in the workspace unfolds the rows above it.
+
+The **eye** at the start of a row hides the element - and everything in it - in the workspace. A hidden element
+isn't drawn, can't be clicked or boxed in, and never stands in the way of the others: the layer rules and the
+guides ignore it. That is how several elements laid over the same area (e.g. the popups of a window) are worked
+on one at a time. It only changes what you see: a hidden element is still saved and built. Which are hidden or
+folded belongs to the window, not to the design - it makes no undo step and no unsaved change - and starts
+fresh with a new or opened design. **Show All** in the header shows them again.
+
 ## Parents and children
 
 A child always stays inside its parent. Moving or resizing an element takes its children along the way a

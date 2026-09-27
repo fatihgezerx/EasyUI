@@ -18,10 +18,11 @@ namespace EasyUI
         // While a drag or a resize is held back by elements on its layer: those elements' ids.
         private readonly HashSet<int> _blockers = new();
 
-        // Out of the overlap rule: a part (Unity lays it out), or an element whose Layout Element ignores layout -
-        // it is placed by hand over the others on purpose, e.g. a background cell under the slots of a grid.
-        private static bool IsFreeToOverlap(EasyUINode node) =>
-            node.IsPart || (node.layoutElement.enabled && node.layoutElement.ignoreLayout);
+        // Out of the overlap rule: a part (Unity lays it out), an element whose Layout Element ignores layout - it is
+        // placed by hand over the others on purpose, e.g. a background cell under the slots of a grid - or one hidden
+        // in the workspace (its eye in the hierarchy), which is out of sight and so never in the way.
+        private bool IsFreeToOverlap(EasyUINode node) =>
+            node.IsPart || (node.layoutElement.enabled && node.layoutElement.ignoreLayout) || IsHidden(node);
 
         // Marks the element as changed just now.
         private void Touch(EasyUINode node) => node.editStamp = ++document.editCounter;

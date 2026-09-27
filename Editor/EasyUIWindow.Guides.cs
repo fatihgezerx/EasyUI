@@ -38,9 +38,10 @@ namespace EasyUI
         }
 
         // Whether `other` stays put while `node` moves: not the element itself nor anything under it, nor (in a
-        // move of the selection) anything moving along. Parts aren't lined up with: they move with their element.
+        // move of the selection) anything moving along. Parts aren't lined up with: they move with their element,
+        // nor is what is hidden in the workspace.
         private bool IsStill(EasyUINode node, EasyUINode other) =>
-            !other.IsPart && !document.IsUnder(other, node) && !(_drag == Drag.Move && IsUnderSelection(other));
+            !other.IsPart && !IsHidden(other) && !document.IsUnder(other, node) && !(_drag == Drag.Move && IsUnderSelection(other));
 
         // The lines the element can line up with along one axis: the edges and middles of the canvas and of
         // every element that stays put.

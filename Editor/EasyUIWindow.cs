@@ -25,6 +25,8 @@ namespace EasyUI
     /// <item>The selected element's Rect Transform and components are edited in the panel on the right - see
     /// <c>EasyUIWindow.Inspector.cs</c>. The top bar names, opens, saves and clears the design - see
     /// <c>EasyUIWindow.Toolbar.cs</c>.</item>
+    /// <item>The hierarchy on the left lists every element as a tree, with an eye to hide one (and what is in it) from
+    /// the workspace - out of sight, it never stands in the way of the others - see <c>EasyUIWindow.Hierarchy.cs</c>.</item>
     /// <item>Ctrl + Z undoes, Ctrl + Y redoes, up to ten steps - see <c>EasyUIWindow.History.cs</c>.</item>
     /// <item>Pan with the middle mouse button (or Alt + left drag), zoom with the scroll wheel, press F to fit
     /// the selection - or, with nothing selected, the canvas - in the view. The round info button in the
@@ -271,10 +273,10 @@ namespace EasyUI
             }
 
             // The Layout pass only hands back a placeholder rect, so the view keeps its last real one there.
-            var view = GUILayoutUtility.GetRect(0f, 0f, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
+            var full = GUILayoutUtility.GetRect(0f, 0f, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
             if (e.type != EventType.Layout)
             {
-                _view = view;
+                SplitView(full);
             }
 
             var hasCanvas = canvas != null && _canvasSize != Vector2.zero;
@@ -293,9 +295,11 @@ namespace EasyUI
 
             // Layout components first (they move and size elements), then which labels show, for this event's
             // clicks and drawing alike.
+            UpdateHidden();
             UpdateLayout();
             TrackHistory();
             UpdateLabels();
+            DrawHierarchy();
             HandleInput(hasCanvas);
             UpdateCursor(hasCanvas);
 
@@ -389,11 +393,27 @@ namespace EasyUI
         #region Elements
 
         // Parents before their children, siblings in the order they were added: the order elements are drawn in.
+        // Elements out of sight (see EasyUIWindow.Hierarchy.cs) aren't in it: they are neither drawn, clicked nor boxed.
         private List<EasyUINode> DrawOrder()
         {
             _drawOrder.Clear();
-            AddChildren(0);
+            foreach (var node in FullOrder())
+            {
+                if (!IsHidden(node))
+                {
+                    _drawOrder.Add(node);
+                }
+            }
+
             return _drawOrder;
+        }
+
+        // The same order, hidden elements too: what the hierarchy lists.
+        private List<EasyUINode> FullOrder()
+        {
+            _fullOrder.Clear();
+            AddChildren(0);
+            return _fullOrder;
         }
 
         private void AddChildren(int parentId)
@@ -407,9 +427,9 @@ namespace EasyUI
                     parent = 0;
                 }
 
-                if (parent == parentId && _drawOrder.Count <= document.nodes.Count && !_drawOrder.Contains(node))
+                if (parent == parentId && _fullOrder.Count <= document.nodes.Count && !_fullOrder.Contains(node))
                 {
-                    _drawOrder.Add(node);
+                    _fullOrder.Add(node);
                     AddChildren(node.id);
                 }
             }
@@ -645,7 +665,7 @@ namespace EasyUI
                 case EventType.MouseMove when hasCanvas:
                     // Only what is under the pointer matters here, for the cursor and highlights: repaint when it changes.
                     var selected = _selected.Count == 1 ? document.Find(_selectedId) : null;
-                    var hover = selected != null && !selected.IsPart && inView ? EdgesAt(ToScreen(selected.Rect), e.mousePosition) : Edges.None;
+                    var hover = selected != null && !selected.IsPart && !IsHidden(selected) && inView ? EdgesAt(ToScreen(selected.Rect), e.mousePosition) : Edges.None;
                     var hoverPencil = inView ? PencilAt(e.mousePosition) : null;
                     var hoverPencilId = hoverPencil != null ? hoverPencil.id : 0;
                     var hoverInfo = InfoButtonRect(_view).Contains(e.mousePosition);
@@ -698,7 +718,7 @@ namespace EasyUI
             _drillId = 0;
 
             var selected = _selected.Count == 1 ? document.Find(_selectedId) : null;
-            var edges = !additive && selected != null && !selected.IsPart ? EdgesAt(ToScreen(selected.Rect), pointer) : Edges.None;
+            var edges = !additive && selected != null && !selected.IsPart && !IsHidden(selected) ? EdgesAt(ToScreen(selected.Rect), pointer) : Edges.None;
             if (edges != Edges.None)
             {
                 _dragStartRect = selected.Rect;
@@ -878,7 +898,7 @@ namespace EasyUI
             }
 
             var selected = _selected.Count == 1 ? document.Find(_selectedId) : null;
-            if (selected != null && _hoverEdges != Edges.None)
+            if (selected != null && !IsHidden(selected) && _hoverEdges != Edges.None)
             {
                 var rect = ToScreen(selected.Rect);
                 var grab = new Rect(rect.x - EdgeGrab, rect.y - EdgeGrab, rect.width + EdgeGrab * 2f, rect.height + EdgeGrab * 2f);

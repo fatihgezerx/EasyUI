@@ -101,6 +101,7 @@ namespace EasyUI
             document = new EasyUIDocument();
             EnsureRoot();
             openedAsset = null;
+            ResetHierarchy();
             ClearHistory();
             ResetSelection();
             MarkSaved();
@@ -112,6 +113,7 @@ namespace EasyUI
             EnsureRoot();
             EasyUIParts.EnsureParts(document);
             openedAsset = panel;
+            ResetHierarchy();
             ClearHistory();
             ResetSelection();
             MarkSaved();

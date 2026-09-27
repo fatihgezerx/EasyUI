@@ -176,7 +176,7 @@ namespace EasyUI
             _selected.UnionWith(_marqueeBase);
             foreach (var node in document.nodes)
             {
-                if (!node.IsPart && Overlaps(box, node.Rect))
+                if (!node.IsPart && !IsHidden(node) && Overlaps(box, node.Rect))
                 {
                     _selected.Add(node.id);
                 }
