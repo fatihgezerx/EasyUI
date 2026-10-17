@@ -204,7 +204,11 @@ namespace EasyUI
                     host.Add(line);
                     if (role != null && !string.IsNullOrEmpty(role.Description))
                     {
-                        host.Add(VeneerStyle.MutedLabel(role.Description));
+                        // The panel has a fixed width: the description wraps and the card grows downwards.
+                        Label description = VeneerStyle.MutedLabel(role.Description);
+                        description.style.whiteSpace = WhiteSpace.Normal;
+                        description.style.flexShrink = 0f;
+                        host.Add(description);
                     }
                 }
             });
