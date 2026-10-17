@@ -35,7 +35,11 @@ namespace EasyUI
     /// A change to the canvas (including the Game view's size) is drawn within a tenth of a second - checked
     /// in <see cref="OnInspectorUpdate"/>, which only repaints when it actually changed.
     /// </remarks>
+#if HAS_VENEER
+    internal sealed partial class EasyUIWindow : Veneer.VeneerWindow
+#else
     internal sealed partial class EasyUIWindow : EditorWindow
+#endif
     {
         private const string Title = "Easy UI";
         private const float MinZoom = 0.05f;
@@ -197,6 +201,9 @@ namespace EasyUI
         {
             titleContent = new GUIContent(Title);
             wantsMouseMove = true;
+#if HAS_VENEER
+            minSize = new Vector2(720f, 380f);
+#endif
             EditorApplication.hierarchyChanged += OnHierarchyChanged;
             EnsureRoot();
             EasyUIParts.EnsureParts(document);
@@ -242,8 +249,15 @@ namespace EasyUI
             {
                 Repaint();
             }
+
+#if HAS_VENEER
+            StudioPoll();
+#endif
         }
 
+#if !HAS_VENEER
+        // The classic IMGUI window. With the Veneer the shell is UI Toolkit (EasyUIWindow.Studio.cs) and
+        // this method is left out.
         private void OnGUI()
         {
             // IMGUI lays out every event in two passes (Layout, then the event itself), and both must make the
@@ -318,6 +332,7 @@ namespace EasyUI
                 DrawInspector();
             }
         }
+#endif
 
         #region View
 

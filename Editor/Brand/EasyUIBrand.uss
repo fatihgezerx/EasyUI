@@ -1,0 +1,193 @@
+/*
+ * Easy UI - brand and window styles, added on top of the Veneer sheet.
+ *
+ * The accent is the exact Easy UI violet (#8E4EC6). The brand passes the class "easyui-accent" as its accent class, so the kit adds
+ * no accent preset of its own. Spacing uses margins only (no gap in USS).
+ */
+
+.vn-root.easyui-accent {
+    --vn-accent: #8E4EC6;
+    --vn-accent-soft: rgba(142, 78, 198, 0.18);
+    --vn-accent-line: rgba(142, 78, 198, 0.60);
+    --vn-pressed: rgba(142, 78, 198, 0.28);
+}
+
+.vn-root.vn-root--light.easyui-accent {
+    --vn-accent: #7430A8;
+    --vn-accent-soft: rgba(116, 48, 168, 0.14);
+    --vn-accent-line: rgba(116, 48, 168, 0.60);
+    --vn-pressed: rgba(116, 48, 168, 0.22);
+}
+
+/* ------------------------------------------------------------------ window shell */
+
+.vn-window.eu-window {
+    padding: 6px;
+}
+
+.eu-name {
+    width: 170px;
+    min-width: 80px;
+    flex-shrink: 1;
+    margin: 0 6px 0 0;
+}
+
+.eu-body {
+    flex-direction: row;
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-height: 0;
+}
+
+.eu-panel {
+    flex-shrink: 1;
+    min-width: 150px;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: var(--vn-card-border);
+    background-color: var(--vn-track);
+    overflow: hidden;
+}
+
+.eu-panel__header {
+    flex-direction: row;
+    align-items: center;
+    padding: 4px 6px;
+    min-height: 26px;
+    background-color: var(--vn-card);
+}
+
+.eu-panel__header > * {
+    margin-right: 6px;
+}
+
+.eu-panel__title {
+    font-size: 11px;
+    -unity-font-style: bold;
+    color: var(--vn-text-muted);
+}
+
+.eu-splitter {
+    width: 6px;
+    flex-shrink: 0;
+    cursor: split-resize-horizontal;
+}
+
+.eu-splitter:hover {
+    background-color: var(--vn-accent-soft);
+}
+
+.eu-workspace {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 120px;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: var(--vn-card-border);
+    overflow: hidden;
+}
+
+.eu-inspector {
+    width: 330px;
+    flex-shrink: 0;
+    margin-left: 6px;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: var(--vn-card-border);
+    background-color: var(--vn-track);
+    overflow: hidden;
+}
+
+.eu-inspector__scroll {
+    flex-grow: 1;
+    padding: 6px;
+}
+
+.eu-head {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.eu-head > .vn-icon {
+    margin-right: 8px;
+}
+
+.eu-head__text {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.eu-row-label {
+    margin-right: 6px;
+    color: var(--vn-text);
+}
+
+/* ------------------------------------------------------------------ rect transform card */
+
+.eu-rect {
+    flex-direction: row;
+}
+
+.eu-anchor {
+    width: 52px;
+    height: 52px;
+    flex-shrink: 0;
+    margin-right: 8px;
+}
+
+.eu-rect__grid {
+    flex-grow: 1;
+    flex-shrink: 1;
+}
+
+.eu-rect__line {
+    flex-direction: row;
+}
+
+.eu-mini {
+    flex-grow: 1;
+    flex-shrink: 1;
+    flex-basis: 0;
+    min-width: 40px;
+    margin: 0 4px 4px 0;
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.eu-mini > Label {
+    min-width: 0;
+    width: auto;
+    font-size: 10px;
+    color: var(--vn-text-muted);
+    padding: 0 0 1px 1px;
+    margin: 0;
+}
+
+.eu-mini > .unity-base-field__input {
+    min-width: 0;
+}
+
+.eu-role {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 2px;
+}
+
+.eu-role__name {
+    flex-grow: 1;
+    -unity-font-style: bold;
+    color: var(--vn-text);
+}
+
+.eu-option {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 3px;
+}
+
+.eu-option > TextField {
+    flex-grow: 1;
+    margin: 0 4px 0 0;
+}

@@ -30,7 +30,11 @@ namespace EasyUI
         private static readonly Color HierarchyColor = new(0.2f, 0.2f, 0.2f);
         private static readonly Color HierarchyHeaderColor = new(0.25f, 0.25f, 0.25f);
         private static readonly Color HierarchySplitterColor = new(0.1f, 0.1f, 0.1f);
+#if HAS_VENEER
+        private static readonly Color HierarchySelectedColor = new(0.557f, 0.306f, 0.776f, 0.38f);
+#else
         private static readonly Color HierarchySelectedColor = new(0.17f, 0.36f, 0.53f);
+#endif
 
         [SerializeField] private float hierarchyWidth = 240f;
 

@@ -3,7 +3,8 @@
     "rootNamespace": "EasyUI",
     "references": [
         "UnityEngine.UI",
-        "Unity.TextMeshPro"
+        "Unity.TextMeshPro",
+        "Veneer.Editor"
     ],
     "includePlatforms": [
         "Editor"

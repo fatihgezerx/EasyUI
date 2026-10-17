@@ -263,8 +263,13 @@ namespace EasyUI
         // which fit every element. The roles it has are ticked; picking one of them takes it off.
         private void ShowRoleMenu(EasyUINode node, Rect field)
         {
+            BuildRoleMenu(node, GUIUtility.GUIToScreenRect(field)).DropDown(field);
+        }
+
+        // The role menu; `screen` is where the Add Role... window opens.
+        private GenericMenu BuildRoleMenu(EasyUINode node, Rect screen)
+        {
             var id = node.id;
-            var screen = GUIUtility.GUIToScreenRect(field);
             var menu = new GenericMenu();
             menu.AddItem(new GUIContent("Add Role..."), false, () => EasyUIAddRoleWindow.Open(screen, roleId => AddRole(id, roleId)));
 
@@ -304,7 +309,7 @@ namespace EasyUI
                 }
             }
 
-            menu.DropDown(field);
+            return menu;
         }
 
         private void AddRole(int id, string roleId)

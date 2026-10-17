@@ -368,6 +368,15 @@ namespace EasyUI
         // (Delete, F) and clicks from working until focus left the window and came back.
         private static void EndTextEditing()
         {
+#if HAS_VENEER
+            // Only the workspace's own IMGUI context can let go of the rename field; from anywhere else it waits
+            // for the workspace's next pass.
+            if (!InWorkspaceGui)
+            {
+                EndEditingPending = true;
+                return;
+            }
+#endif
             GUI.FocusControl(null);
             GUIUtility.keyboardControl = 0;
             EditorGUIUtility.editingTextField = false;

@@ -57,7 +57,7 @@ namespace EasyUI
             }
         }
 
-        private void ShowOpenMenu()
+        private void ShowOpenMenu(Rect? anchor = null)
         {
             var menu = new GenericMenu();
             menu.AddItem(new GUIContent("New Panel"), false, () =>
@@ -92,7 +92,14 @@ namespace EasyUI
                 }
             }
 
-            menu.ShowAsContext();
+            if (anchor.HasValue)
+            {
+                menu.DropDown(anchor.Value);
+            }
+            else
+            {
+                menu.ShowAsContext();
+            }
         }
 
         // An empty design: only its root element.

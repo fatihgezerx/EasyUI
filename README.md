@@ -102,20 +102,6 @@ An element with a **Layout Element** whose **Ignore Layout** is ticked is out of
 the others on its layer - e.g. a background image stretched under the children of a layout group - and never
 stops a drag. It still stays inside its parent.
 
-## Hierarchy
-
-The panel on the left is always open and lists every element as a tree, like Unity's Hierarchy: each level one
-step in from its parent, a foldout arrow on those that hold children. Drag its right edge to make it as wide as
-you need; it scrolls both ways, so a deep tree is never cut off. Clicking a row selects the element (Ctrl + click
-adds or removes it, a double click frames it); selecting one in the workspace unfolds the rows above it.
-
-The **eye** at the start of a row hides the element - and everything in it - in the workspace. A hidden element
-isn't drawn, can't be clicked or boxed in, and never stands in the way of the others: the layer rules and the
-guides ignore it. That is how several elements laid over the same area (e.g. the popups of a window) are worked
-on one at a time. It only changes what you see: a hidden element is still saved and built. Which are hidden or
-folded belongs to the window, not to the design - it makes no undo step and no unsaved change - and starts
-fresh with a new or opened design. **Show All** in the header shows them again.
-
 ## Parents and children
 
 A child always stays inside its parent. Moving or resizing an element takes its children along the way a
@@ -133,6 +119,23 @@ a line pulls the element onto it.
 
 Hold **Shift** to snap to the canvas grid instead. The grid's steps fit the canvas exactly (1920 x 1080 is
 16 x 9 large squares), so no half square is left at its edges.
+
+## In the editor
+
+With the **Veneer** system in the project (Easy UI offers to install it, and sets `HAS_VENEER`), `Tools > Easy UI` opens
+in the studio look shared by all systems, in Easy UI's violet. Without the kit the classic window described below opens instead; it
+behaves the same.
+
+- **Title bar**: the logo, a state pill (*Saved*, *Unsaved changes* or *No canvas*), the panel's name, the canvas size, and the buttons
+  Open, Save, Undo, Redo, Frame (F), Clear and Help.
+- **Three panels**: the hierarchy on the left (drag the strip beside it to resize), the workspace in the middle, the Inspector on the
+  right. The Inspector is docked now instead of floating over the workspace.
+- **Inspector tabs** for the selected element: *Element* (Rect Transform with the anchor presets, position, size and pivot; the settings
+  used most for its kind, e.g. text, font size, colour and alignment for a Text; Roles), *Details* (the rest of its settings: text
+  style, image type, transition colours...) and *Components* (Content Size Fitter, Canvas Group, layout groups, Layout Element, masks,
+  and the add button). Parts of a composite element are chosen from the *Parts* row above the tabs.
+- The hierarchy tree and the workspace (canvas, selection, dragging, guides, renaming, shortcuts) are the same IMGUI code as before,
+  hosted inside the new window.
 
 ## The inspector
 
