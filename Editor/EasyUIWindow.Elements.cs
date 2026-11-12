@@ -117,11 +117,14 @@ namespace EasyUI
 
         #region Text
 
-        private void DrawText(TextSettings text)
+        private void DrawText(TextSettings text, bool content = true)
         {
-            EditorGUILayout.LabelField("Text Input");
-            text.text = EditorGUILayout.TextArea(text.text, GUILayout.MinHeight(48f));
-            Gap();
+            if (content)
+            {
+                EditorGUILayout.LabelField("Text Input");
+                text.text = EditorGUILayout.TextArea(text.text, GUILayout.MinHeight(48f));
+                Gap();
+            }
 
             text.font = (TMP_FontAsset)EditorGUILayout.ObjectField(new GUIContent("Font Asset", "Empty: the default font of TMP Settings"),
                 text.font, typeof(TMP_FontAsset), false);
@@ -149,15 +152,16 @@ namespace EasyUI
             text.overflow = (TextOverflowModes)EnumRow("Overflow", text.overflow);
             ToggleRow("Rich Text", ref text.richText);
             ToggleRow("Raycast Target", ref text.raycastTarget);
+            ToggleRow("Maskable", ref text.maskable);
         }
 
         #endregion
 
         #region Images
 
-        private void DrawImageSection(ImageSettings image)
+        private void DrawImageSection(ImageSettings image, string title = "Image")
         {
-            if (!Section("Image", ref image.open))
+            if (!Section(title, ref image.open))
             {
                 return;
             }
@@ -168,6 +172,7 @@ namespace EasyUI
             image.color = EditorGUILayout.ColorField("Color", image.color);
             Gap();
             ToggleRow("Raycast Target", ref image.raycastTarget);
+            ToggleRow("Maskable", ref image.maskable);
             image.imageType = (Image.Type)EnumRow("Image Type", image.imageType);
 
             using (new EditorGUI.IndentLevelScope())
@@ -225,6 +230,7 @@ namespace EasyUI
             raw.color = EditorGUILayout.ColorField("Color", raw.color);
             Gap();
             ToggleRow("Raycast Target", ref raw.raycastTarget);
+            ToggleRow("Maskable", ref raw.maskable);
             raw.uvRect = EditorGUILayout.RectField("UV Rect", raw.uvRect);
             Gap();
         }
@@ -286,7 +292,7 @@ namespace EasyUI
             GUILayout.Space(4f);
         }
 
-        private static void DrawSlider(SliderSettings slider)
+        private void DrawSlider(SliderSettings slider)
         {
             slider.direction = (Slider.Direction)EnumRow("Direction", slider.direction);
             slider.minValue = EditorGUILayout.FloatField("Min Value", slider.minValue);
@@ -294,6 +300,15 @@ namespace EasyUI
             slider.maxValue = EditorGUILayout.FloatField("Max Value", slider.maxValue);
             Gap();
             ToggleRow("Whole Numbers", ref slider.wholeNumbers);
+            ToggleRow("Custom Look", ref slider.styled);
+            if (slider.styled)
+            {
+                DrawSliderPiece("Background", slider.background, true);
+                DrawSliderPiece("Fill Area", slider.fillArea, true);
+                DrawSliderPiece("Fill", slider.fill, false);
+                DrawSliderPiece("Handle Slide Area", slider.handleArea, true);
+                DrawSliderPiece("Handle", slider.handle, false);
+            }
 
             var low = Mathf.Min(slider.minValue, slider.maxValue);
             var high = Mathf.Max(slider.minValue, slider.maxValue);
@@ -301,6 +316,35 @@ namespace EasyUI
                 ? EditorGUILayout.IntSlider("Value", Mathf.RoundToInt(slider.value), Mathf.RoundToInt(low), Mathf.RoundToInt(high))
                 : EditorGUILayout.Slider("Value", slider.value, low, high);
             Gap();
+        }
+
+        // One piece of a slider: whether it exists, where it sits (a slider anchors its Fill and Handle itself: offsets only) and its Image.
+        private void DrawSliderPiece(string title, SliderPieceSettings piece, bool anchors)
+        {
+            if (!Section(title, ref piece.open))
+            {
+                return;
+            }
+
+            ToggleRow("Present", ref piece.present);
+            if (!piece.present)
+            {
+                return;
+            }
+
+            if (anchors)
+            {
+                piece.anchorMin = EditorGUILayout.Vector2Field("Anchor Min", piece.anchorMin);
+                piece.anchorMax = EditorGUILayout.Vector2Field("Anchor Max", piece.anchorMax);
+            }
+
+            piece.offsetMin = EditorGUILayout.Vector2Field(new GUIContent("Offset Min", "Left, bottom"), piece.offsetMin);
+            piece.offsetMax = EditorGUILayout.Vector2Field(new GUIContent("Offset Max", "Right, top"), piece.offsetMax);
+            ToggleRow("Has Image", ref piece.hasImage);
+            if (piece.hasImage)
+            {
+                DrawImageSection(piece.image, title + " Image");
+            }
         }
 
         // Its options as a list - each one's text with a minus to remove it, and a plus under them - then Value,
@@ -351,7 +395,7 @@ namespace EasyUI
             Gap();
         }
 
-        private static void DrawInputField(InputFieldSettings input)
+        private void DrawInputField(InputFieldSettings input)
         {
             input.text = TextRow("Text", input.text);
             input.placeholder = TextRow("Placeholder", input.placeholder);
@@ -360,6 +404,20 @@ namespace EasyUI
             input.characterLimit = Mathf.Max(0, EditorGUILayout.IntField(new GUIContent("Character Limit", "0: no limit"), input.characterLimit));
             Gap();
             ToggleRow("Read Only", ref input.readOnly);
+            ToggleRow("Custom Text Style", ref input.styled);
+            if (input.styled)
+            {
+                input.viewportMin = EditorGUILayout.Vector2Field(new GUIContent("Text Area Min", "Left, bottom"), input.viewportMin);
+                input.viewportMax = EditorGUILayout.Vector2Field(new GUIContent("Text Area Max", "Right, top"), input.viewportMax);
+                input.textMin = EditorGUILayout.Vector2Field(new GUIContent("Text Min", "The text's offset from the text area: left, bottom"), input.textMin);
+                input.textMax = EditorGUILayout.Vector2Field(new GUIContent("Text Max", "Right, top"), input.textMax);
+                input.placeholderMin = EditorGUILayout.Vector2Field(new GUIContent("Placeholder Min", "Left, bottom"), input.placeholderMin);
+                input.placeholderMax = EditorGUILayout.Vector2Field(new GUIContent("Placeholder Max", "Right, top"), input.placeholderMax);
+                EditorGUILayout.LabelField("Text Style", EditorStyles.boldLabel);
+                DrawText(input.textStyle, false);
+                EditorGUILayout.LabelField("Placeholder Style", EditorStyles.boldLabel);
+                DrawText(input.placeholderStyle, false);
+            }
         }
 
         #endregion

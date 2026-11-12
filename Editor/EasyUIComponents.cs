@@ -124,6 +124,9 @@ namespace EasyUI
         public float decelerationRate = 0.135f;
         public float scrollSensitivity = 1f;
 
+        // Whether the view has Unity's translucent background (its root Image); off, it is drawn transparent.
+        public bool background = true;
+
         public bool horizontalScrollbar = true;
         public ScrollbarVisibility horizontalScrollbarVisibility = ScrollbarVisibility.AutoHideAndExpandViewport;
         public float horizontalScrollbarSpacing = -3f;

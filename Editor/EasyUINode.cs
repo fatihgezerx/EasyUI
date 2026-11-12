@@ -52,6 +52,7 @@ namespace EasyUI
         public DropdownSettings dropdown = new();
         public InputFieldSettings inputField = new();
         public ScrollViewSettings scrollView = new();
+        public ScrollbarHandleSettings scrollbarHandle = new();
 
         // Components that can be added to any kind.
         public ContentSizeFitterSettings contentSizeFitter = new();

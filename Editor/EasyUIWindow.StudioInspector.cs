@@ -112,6 +112,7 @@ namespace EasyUI
                 Brand, out var pages, out _);
             scroll.Add(view);
 
+            BuildNameCard(pages[0], node);
             BuildRectCard(pages[0], node);
             BuildLook(pages[0], pages[1], node);
             BuildRolesCard(pages[0], node);
@@ -181,6 +182,15 @@ namespace EasyUI
                     menu.DropDown(button.worldBound);
                 }, false, Brand);
             parent.Add(VeneerStyle.FieldRow("Parts", button, "Select a part of this element.", out _));
+        }
+
+        // The name is committed when Enter is pressed or the field is left, as on the canvas, so clearing it to type
+        // another does not drop the element to its kind's name in between.
+        private void BuildNameCard(VisualElement page, EasyUINode node)
+        {
+            var card = NewCard(page, "Name", "edit");
+            card.Add(TextRow("Name", "What the object is called when the panel is built. Left empty, it gets its kind's own name.",
+                () => NameOf(node), value => SetName(node, value), false, true));
         }
 
         private void BuildRolesCard(VisualElement page, EasyUINode node)
@@ -339,15 +349,16 @@ namespace EasyUI
             row.Add(unitLabel);
         }
 
-        private VisualElement TextRow(string label, string tip, Func<string> get, Action<string> set, bool multiline = false)
+        private VisualElement TextRow(string label, string tip, Func<string> get, Action<string> set, bool multiline = false, bool delayed = false)
         {
-            var field = new TextField { multiline = multiline };
+            var field = new TextField { multiline = multiline, isDelayed = delayed };
             if (multiline)
             {
                 field.style.minHeight = 54f;
             }
 
-            return Row(label, tip, field, get, set);
+            // A delayed field shows what the model made of the typed text (an empty name becomes the kind's name).
+            return Row(label, tip, field, get, set, delayed);
         }
 
         private VisualElement ColorRow(string label, Func<Color> get, Action<Color> set) =>
@@ -362,8 +373,33 @@ namespace EasyUI
         private VisualElement EnumRow<TEnum>(string label, string tip, Func<TEnum> get, Action<TEnum> set, bool flags = false)
             where TEnum : struct, Enum
         {
-            BaseField<Enum> field = flags ? new EnumFlagsField((Enum)(object)get()) : new EnumField((Enum)(object)get());
-            return Row(label, tip, field, () => (Enum)(object)get(), value => set((TEnum)(object)value));
+            if (flags)
+            {
+                // A flags enum keeps Unity's field: the kit's dropdown picks one member.
+                BaseField<Enum> field = new EnumFlagsField((Enum)(object)get());
+                return Row(label, tip, field, () => (Enum)(object)get(), value => set((TEnum)(object)value));
+            }
+
+            // The kit's animated dropdown; it follows the model like the other rows (not while it has focus).
+            VeneerEnumDropdownField<TEnum> dropdown = VeneerDropdown.CreateEnum(get(), value =>
+            {
+                set(value);
+                AfterEdit();
+            }, Brand);
+            AddSync(() =>
+            {
+                if (IsEditing(dropdown) || dropdown.IsOpen)
+                {
+                    return;
+                }
+
+                var value = get();
+                if (!EqualityComparer<TEnum>.Default.Equals(value, dropdown.EnumValue))
+                {
+                    dropdown.EnumValue = value;
+                }
+            });
+            return VeneerStyle.FieldRow(label, dropdown, tip, out _);
         }
 
         private VisualElement SliderRow(string label, string tip, Func<float> low, Func<float> high, Func<float> get, Action<float> set)
@@ -638,7 +674,7 @@ namespace EasyUI
                     card.Add(ColorRow("Color", () => raw.color, v => raw.color = v));
                     var more = NewCard(details, "Raw Image", "image");
                     more.Add(Row("UV Rect", null, new RectField(), () => raw.uvRect, v => raw.uvRect = v));
-                    more.Add(ChipRow(RaycastChip(() => raw.raycastTarget, v => raw.raycastTarget = v)));
+                    more.Add(ChipRow(RaycastChip(() => raw.raycastTarget, v => raw.raycastTarget = v), MaskableChip(() => raw.maskable, v => raw.maskable = v)));
                     break;
                 }
 
@@ -684,6 +720,24 @@ namespace EasyUI
                     more.Add(EnumRow("Line Type", null, () => input.lineType, v => input.lineType = v));
                     more.Add(IntRow("Character Limit", "0: no limit", () => input.characterLimit, v => input.characterLimit = Mathf.Max(0, v)));
                     more.Add(ChipRow(BoolChip("Read Only", "lock", null, () => input.readOnly, v => input.readOnly = v)));
+            more.Add(ChipRow(BoolChip("Custom Text Style", "text", "Style what is typed and the placeholder yourself; off, Unity's look",
+                () => input.styled, v => input.styled = v)));
+            var area = NewCard(details, "Text Area", "move");
+            area.Add(Row("Min (left, bottom)", null, new Vector2Field(), () => input.viewportMin, v => input.viewportMin = v));
+            area.Add(Row("Max (right, top)", null, new Vector2Field(), () => input.viewportMax, v => input.viewportMax = v));
+            area.Add(Row("Text Min", null, new Vector2Field(), () => input.textMin, v => input.textMin = v));
+            area.Add(Row("Text Max", null, new Vector2Field(), () => input.textMax, v => input.textMax = v));
+            area.Add(Row("Placeholder Min", null, new Vector2Field(), () => input.placeholderMin, v => input.placeholderMin = v));
+            area.Add(Row("Placeholder Max", null, new Vector2Field(), () => input.placeholderMax, v => input.placeholderMax = v));
+            Show(area, () => input.styled);
+            foreach (var style in new[] { ("Text Style", input.textStyle), ("Placeholder Style", input.placeholderStyle) })
+            {
+                var styleCard = NewCard(details, style.Item1, "text");
+                BuildTextFront(styleCard, style.Item2, false);
+                BuildTextDetails(styleCard, style.Item2);
+                Show(styleCard, () => input.styled);
+            }
+
                     BuildImageDetails(NewCard(details, "Background", "image"), node.image);
                     BuildTransition(details, node.selectable);
                     break;
@@ -711,12 +765,19 @@ namespace EasyUI
         private VisualElement InteractableChip(SelectableSettings selectable) =>
             BoolChip("Interactable", "check", "Whether the control reacts to input", () => selectable.interactable, v => selectable.interactable = v);
 
+        private VisualElement MaskableChip(Func<bool> get, Action<bool> set) =>
+            BoolChip("Maskable", "layers", "Whether a Mask, a Rect Mask 2D or a Cutout Mask can hide it", get, set);
+
         private VisualElement RaycastChip(Func<bool> get, Action<bool> set) =>
             BoolChip("Raycast Target", "target", "Whether the graphic blocks clicks", get, set);
 
-        private void BuildTextFront(VisualElement card, TextSettings text)
+        private void BuildTextFront(VisualElement card, TextSettings text, bool content = true)
         {
-            card.Add(TextRow("Text", null, () => text.text, v => text.text = v, true));
+            if (content)
+            {
+                card.Add(TextRow("Text", null, () => text.text, v => text.text = v, true));
+            }
+
             card.Add(FloatRow("Font Size", null, () => text.fontSize, v => text.fontSize = Mathf.Max(0f, v), "pt"));
             card.Add(ChipRow(BoolChip("Auto Size", "fit", "Fit the text to the element", () => text.autoSize, v => text.autoSize = v)));
             var min = FloatRow("Min", null, () => text.fontSizeMin, v => text.fontSizeMin = Mathf.Max(0f, v), "pt");
@@ -741,7 +802,8 @@ namespace EasyUI
             card.Add(EnumRow("Wrapping", null, () => text.wrapping, v => text.wrapping = v));
             card.Add(EnumRow("Overflow", null, () => text.overflow, v => text.overflow = v));
             card.Add(ChipRow(BoolChip("Rich Text", "code", "Parse rich text tags", () => text.richText, v => text.richText = v),
-                RaycastChip(() => text.raycastTarget, v => text.raycastTarget = v)));
+                RaycastChip(() => text.raycastTarget, v => text.raycastTarget = v),
+                MaskableChip(() => text.maskable, v => text.maskable = v)));
         }
 
         private void BuildImageFront(VisualElement card, ImageSettings image)
@@ -753,7 +815,7 @@ namespace EasyUI
 
         private void BuildImageDetails(VisualElement card, ImageSettings image)
         {
-            card.Add(ChipRow(RaycastChip(() => image.raycastTarget, v => image.raycastTarget = v)));
+            card.Add(ChipRow(RaycastChip(() => image.raycastTarget, v => image.raycastTarget = v), MaskableChip(() => image.maskable, v => image.maskable = v)));
 
             var aspect = ChipRow(BoolChip("Preserve Aspect", "fit", null, () => image.preserveAspect, v => image.preserveAspect = v));
             Show(aspect, () => image.imageType == UGUIImage.Type.Simple || image.imageType == UGUIImage.Type.Filled);
@@ -791,28 +853,33 @@ namespace EasyUI
             var shown = image.fillMethod;
             var names = OriginNames(shown);
             image.fillOrigin = Mathf.Clamp(image.fillOrigin, 0, names.Length - 1);
-            var field = new DropdownField(new List<string>(names), image.fillOrigin);
-            field.RegisterValueChangedCallback(_ =>
+            var field = (VeneerDropdownField)VeneerDropdown.Create(names, image.fillOrigin, index =>
             {
-                image.fillOrigin = Mathf.Max(0, field.index);
+                image.fillOrigin = Mathf.Max(0, index);
                 AfterEdit();
-            });
+            }, Brand);
             AddSync(() =>
             {
-                if (IsEditing(field))
+                if (IsEditing(field) || field.IsOpen)
                 {
                     return;
                 }
 
+                var count = OriginNames(shown).Length;
                 if (image.fillMethod != shown)
                 {
                     shown = image.fillMethod;
-                    field.choices = new List<string>(OriginNames(shown));
+                    count = OriginNames(shown).Length;
+                    image.fillOrigin = Mathf.Clamp(image.fillOrigin, 0, count - 1);
+                    field.SetChoices(OriginNames(shown), image.fillOrigin);
+                    return;
                 }
 
-                var count = OriginNames(shown).Length;
                 image.fillOrigin = Mathf.Clamp(image.fillOrigin, 0, count - 1);
-                field.SetValueWithoutNotify(field.choices is List<string> list && image.fillOrigin < list.Count ? list[image.fillOrigin] : string.Empty);
+                if (field.Value != image.fillOrigin)
+                {
+                    field.SetValue(image.fillOrigin);
+                }
             });
             return VeneerStyle.FieldRow("Fill Origin", field, null, out _);
         }
@@ -865,7 +932,38 @@ namespace EasyUI
             var more = NewCard(details, "Slider", "sliders");
             more.Add(EnumRow("Direction", null, () => slider.direction, v => slider.direction = v));
             more.Add(ChipRow(BoolChip("Whole Numbers", "hash", null, () => slider.wholeNumbers, v => slider.wholeNumbers = v)));
+            more.Add(ChipRow(BoolChip("Custom Look", "image", "Give the slider's Background, Fill and Handle a look of your own; off, Unity's",
+                () => slider.styled, v => slider.styled = v)));
+            BuildSliderPiece(details, "Background", slider.background, true, () => slider.styled);
+            BuildSliderPiece(details, "Fill Area", slider.fillArea, true, () => slider.styled);
+            BuildSliderPiece(details, "Fill", slider.fill, false, () => slider.styled);
+            BuildSliderPiece(details, "Handle Slide Area", slider.handleArea, true, () => slider.styled);
+            BuildSliderPiece(details, "Handle", slider.handle, false, () => slider.styled);
+
             BuildTransition(details, node.selectable);
+        }
+
+        // One piece of a slider (shown while the slider has a look of its own): whether it exists, where it sits (a slider anchors its
+        // Fill and Handle itself: offsets only) and its Image.
+        private void BuildSliderPiece(VisualElement page, string title, SliderPieceSettings piece, bool anchors, Func<bool> shown)
+        {
+            var card = NewCard(page, title, "image");
+            card.Add(ChipRow(BoolChip("Present", "check", "A piece the slider doesn't have is built as Unity makes it but not drawn", () => piece.present, v => piece.present = v),
+                BoolChip("Has Image", "image", null, () => piece.hasImage, v => piece.hasImage = v)));
+            if (anchors)
+            {
+                card.Add(Row("Anchor Min", null, new Vector2Field(), () => piece.anchorMin, v => piece.anchorMin = v));
+                card.Add(Row("Anchor Max", null, new Vector2Field(), () => piece.anchorMax, v => piece.anchorMax = v));
+            }
+
+            card.Add(Row("Offset Min (left, bottom)", null, new Vector2Field(), () => piece.offsetMin, v => piece.offsetMin = v));
+            card.Add(Row("Offset Max (right, top)", null, new Vector2Field(), () => piece.offsetMax, v => piece.offsetMax = v));
+            var look = new VisualElement();
+            BuildImageFront(look, piece.image);
+            BuildImageDetails(look, piece.image);
+            Show(look, () => piece.hasImage);
+            card.Add(look);
+            Show(card, shown);
         }
 
         // Its options as a list - each one's text with a remove button, and Add under them - then Value, the option shown first.
@@ -917,41 +1015,50 @@ namespace EasyUI
             add.style.alignSelf = Align.FlexStart;
             card.Add(add);
 
-            var value = new DropdownField(new List<string>(dropdown.options), 0);
-            value.RegisterValueChangedCallback(_ =>
+            var shownOptions = new List<string>(dropdown.options);
+            var value = (VeneerDropdownField)VeneerDropdown.Create(shownOptions, 0, index =>
             {
-                dropdown.value = Mathf.Max(0, value.index);
+                dropdown.value = Mathf.Max(0, index);
                 AfterEdit();
-            });
+            }, Brand);
+            value.Placeholder = "(no options)";
             AddSync(() =>
             {
-                if (IsEditing(value))
+                if (IsEditing(value) || value.IsOpen)
                 {
                     return;
                 }
 
-                var current = value.choices as List<string>;
-                var differs = current == null || current.Count != dropdown.options.Count;
-                for (var i = 0; !differs && i < current.Count; i++)
+                var differs = shownOptions.Count != dropdown.options.Count;
+                for (var i = 0; !differs && i < shownOptions.Count; i++)
                 {
-                    differs = current[i] != dropdown.options[i];
-                }
-
-                if (differs)
-                {
-                    value.choices = new List<string>(dropdown.options);
+                    differs = shownOptions[i] != dropdown.options[i];
                 }
 
                 if (dropdown.options.Count == 0)
                 {
-                    value.SetValueWithoutNotify("(no options)");
+                    if (differs)
+                    {
+                        shownOptions.Clear();
+                        value.SetChoices(shownOptions, -1);
+                    }
+
                     value.SetEnabled(false);
                     return;
                 }
 
                 value.SetEnabled(true);
                 dropdown.value = Mathf.Clamp(dropdown.value, 0, dropdown.options.Count - 1);
-                value.SetValueWithoutNotify(dropdown.options[dropdown.value]);
+                if (differs)
+                {
+                    shownOptions.Clear();
+                    shownOptions.AddRange(dropdown.options);
+                    value.SetChoices(shownOptions, dropdown.value);
+                }
+                else if (value.Value != dropdown.value)
+                {
+                    value.SetValue(dropdown.value);
+                }
             });
             card.Add(VeneerStyle.FieldRow("Value", value, "The option shown first", out _));
         }
@@ -962,6 +1069,8 @@ namespace EasyUI
             var card = NewCard(front, "Scroll View", "list");
             card.Add(ChipRow(BoolChip("Horizontal", "arrow-right", null, () => scroll.horizontal, v => scroll.horizontal = v),
                 BoolChip("Vertical", "arrow-down", null, () => scroll.vertical, v => scroll.vertical = v)));
+            card.Add(ChipRow(BoolChip("Background", "image", "Unity's translucent Scroll View background; off, it is drawn transparent",
+                () => scroll.background, v => scroll.background = v)));
             card.Add(EnumRow("Movement Type", null, () => scroll.movementType, v => scroll.movementType = v));
 
             var more = NewCard(details, "Scrolling", "move");

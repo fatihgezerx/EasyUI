@@ -333,20 +333,26 @@ namespace EasyUI
             _renamingId = 0;
             if (node != null)
             {
-                // The root, left nameless (or named like the panel), keeps being called after the panel.
-                var name = _renameText.Trim();
-                if (document.IsRootNode(node))
-                {
-                    node.name = name == document.panelName.Trim() ? string.Empty : name;
-                }
-                else
-                {
-                    node.name = name.Length > 0 ? name : EasyUINode.DefaultName(node.type);
-                }
+                SetName(node, _renameText);
             }
 
             EndTextEditing();
             Repaint();
+        }
+
+        // The root, left nameless (or named like the panel), keeps being called after the panel; any other element
+        // left nameless gets its kind's own name. Shared by the pencil on the canvas and the Name field of the Inspector.
+        private void SetName(EasyUINode node, string typed)
+        {
+            var name = typed.Trim();
+            if (document.IsRootNode(node))
+            {
+                node.name = name == document.panelName.Trim() ? string.Empty : name;
+            }
+            else
+            {
+                node.name = name.Length > 0 ? name : node.IsPart ? EasyUIParts.DefaultName(node.part) : EasyUINode.DefaultName(node.type);
+            }
         }
 
         // Leaves the name as it was (a new element gets its type's name).

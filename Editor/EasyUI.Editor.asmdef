@@ -2,6 +2,7 @@
     "name": "EasyUI.Editor",
     "rootNamespace": "EasyUI",
     "references": [
+        "EasyUI.Runtime",
         "UnityEngine.UI",
         "Unity.TextMeshPro",
         "Veneer.Editor"

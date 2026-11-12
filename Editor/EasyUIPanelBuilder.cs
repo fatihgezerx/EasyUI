@@ -199,6 +199,17 @@ namespace EasyUI
             {
                 BuildElement(node, into, designParent, children, ui, built);
             }
+
+            // The pieces Unity makes with a control (a Button's Text) are already there, ahead of what was added: put every
+            // element in the order the design has them, which is what a layout group and the drawing order go by.
+            var order = 0;
+            foreach (var node in list)
+            {
+                if (built.TryGetValue(node.id, out var element) && element != null && element.transform.parent == into)
+                {
+                    element.transform.SetSiblingIndex(order++);
+                }
+            }
         }
 
         // The element in `into`, set up as designed, with everything under it; null for a part Unity didn't make.
@@ -227,6 +238,10 @@ namespace EasyUI
             if (!node.IsPart || !EasyUIParts.IsDriven(node.part))
             {
                 Place(rect, node, designParent);
+            }
+            else if (node.scrollbarHandle.styled)
+            {
+                PlaceHandle(rect, node.scrollbarHandle);
             }
 
             AddComponents(node, element);
@@ -257,6 +272,21 @@ namespace EasyUI
             var bottom = parent.yMax - (node.position.y + node.size.y);
             rect.offsetMin = new Vector2(left - anchorMin.x * parent.width, bottom - anchorMin.y * parent.height);
             rect.offsetMax = new Vector2(left + node.size.x - anchorMax.x * parent.width, bottom + node.size.y - anchorMax.y * parent.height);
+        }
+
+        // A scrollbar's handle is sized by its Scrollbar; what is kept is the Sliding Area it moves in and its offsets from it.
+        private static void PlaceHandle(RectTransform handle, ScrollbarHandleSettings settings)
+        {
+            if (handle.parent is RectTransform area && area.GetComponent<Scrollbar>() == null)
+            {
+                area.anchorMin = settings.areaAnchorMin;
+                area.anchorMax = settings.areaAnchorMax;
+                area.offsetMin = settings.areaOffsetMin;
+                area.offsetMax = settings.areaOffsetMax;
+            }
+
+            handle.offsetMin = settings.handleOffsetMin;
+            handle.offsetMax = settings.handleOffsetMax;
         }
 
         // The current stage's first active root canvas, a screen-space one if there is any.
@@ -473,6 +503,7 @@ namespace EasyUI
             text.overflowMode = settings.overflow;
             text.richText = settings.richText;
             text.raycastTarget = settings.raycastTarget;
+            text.maskable = settings.maskable;
         }
 
         private static void ApplyImage(Image image, ImageSettings settings)
@@ -480,6 +511,7 @@ namespace EasyUI
             image.sprite = settings.sprite;
             image.color = settings.color;
             image.raycastTarget = settings.raycastTarget;
+            image.maskable = settings.maskable;
             image.type = settings.imageType;
             image.preserveAspect = settings.preserveAspect;
             image.fillCenter = settings.fillCenter;
@@ -495,6 +527,7 @@ namespace EasyUI
             image.texture = settings.texture;
             image.color = settings.color;
             image.raycastTarget = settings.raycastTarget;
+            image.maskable = settings.maskable;
             image.uvRect = settings.uvRect;
         }
 
@@ -543,6 +576,63 @@ namespace EasyUI
             slider.maxValue = settings.maxValue;
             slider.wholeNumbers = settings.wholeNumbers;
             slider.SetValueWithoutNotify(settings.value);
+
+            // Unity's pieces stay (the slider works through them); with a look of its own each one is placed and drawn as designed.
+            if (settings.styled)
+            {
+                var fill = slider.fillRect;
+                var handle = slider.handleRect;
+                ApplyPiece(slider.transform.Find("Background"), settings.background, true);
+                ApplyPiece(fill != null && fill.parent != slider.transform ? fill.parent : null, settings.fillArea, true);
+                ApplyPiece(fill, settings.fill, false);
+                ApplyPiece(handle != null && handle.parent != slider.transform ? handle.parent : null, settings.handleArea, true);
+                ApplyPiece(handle, settings.handle, false);
+            }
+        }
+
+        // `anchors` off for the pieces the slider anchors itself (Fill, Handle): only their offsets are set.
+        private static void ApplyPiece(Transform piece, SliderPieceSettings settings, bool anchors)
+        {
+            if (piece == null)
+            {
+                return;
+            }
+
+            if (settings.present)
+            {
+                var rect = (RectTransform)piece;
+                if (anchors)
+                {
+                    rect.anchorMin = settings.anchorMin;
+                    rect.anchorMax = settings.anchorMax;
+                }
+
+                rect.offsetMin = settings.offsetMin;
+                rect.offsetMax = settings.offsetMax;
+            }
+
+            piece.TryGetComponent<Image>(out var image);
+            if (settings.present && settings.hasImage)
+            {
+                if (image == null)
+                {
+                    if (!piece.TryGetComponent<CanvasRenderer>(out _))
+                    {
+                        piece.gameObject.AddComponent<CanvasRenderer>();
+                    }
+
+                    image = piece.gameObject.AddComponent<Image>();
+                }
+
+                ApplyImage(image, settings.image);
+            }
+            else if (image != null)
+            {
+                var color = image.color;
+                color.a = 0f;
+                image.color = color;
+                image.raycastTarget = false;
+            }
         }
 
         private static void ApplyDropdown(TMP_Dropdown dropdown, EasyUINode node)
@@ -570,6 +660,28 @@ namespace EasyUI
             {
                 placeholder.text = settings.placeholder;
             }
+
+            // The look of what is typed and of the placeholder; the texts themselves are the field's own.
+            if (settings.styled)
+            {
+                if (input.textViewport != null)
+                {
+                    input.textViewport.offsetMin = settings.viewportMin;
+                    input.textViewport.offsetMax = settings.viewportMax;
+                }
+
+                input.textComponent.rectTransform.offsetMin = settings.textMin;
+                input.textComponent.rectTransform.offsetMax = settings.textMax;
+                ApplyText(input.textComponent, settings.textStyle);
+                input.SetTextWithoutNotify(settings.text);
+                if (input.placeholder is TMP_Text styledPlaceholder)
+                {
+                    styledPlaceholder.rectTransform.offsetMin = settings.placeholderMin;
+                    styledPlaceholder.rectTransform.offsetMax = settings.placeholderMax;
+                    ApplyText(styledPlaceholder, settings.placeholderStyle);
+                    styledPlaceholder.text = settings.placeholder;
+                }
+            }
         }
 
         // Its Scroll Rect's fields, and only the scrollbars ticked (the others' parts don't exist).
@@ -583,6 +695,14 @@ namespace EasyUI
             scroll.inertia = settings.inertia;
             scroll.decelerationRate = settings.decelerationRate;
             scroll.scrollSensitivity = settings.scrollSensitivity;
+
+            // Unity's Scroll View comes with a translucent background; the Image stays, so the view can still be dragged.
+            if (!settings.background && scroll.TryGetComponent<Image>(out var background))
+            {
+                var color = background.color;
+                color.a = 0f;
+                background.color = color;
+            }
 
             if (settings.horizontalScrollbar)
             {

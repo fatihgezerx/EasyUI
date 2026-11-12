@@ -18,7 +18,7 @@ namespace EasyUI
     internal sealed partial class EasyUIWindow
     {
         // The folder saved to last, kept per project (in its UserSettings), so the dialog starts there next time.
-        private const string SaveFolderKey = "EasyUI.SaveFolder";
+        internal const string SaveFolderKey = "EasyUI.SaveFolder";
 
         [SerializeField] private EasyUIPanel openedAsset;
 

@@ -139,7 +139,8 @@ behaves the same.
 
 ## The inspector
 
-The floating panel in the top-right corner shows the selected element: its **Rect Transform**, then the
+The floating panel in the top-right corner shows the selected element: its **Name** (changed when Enter is
+pressed or the field is left; left empty, it gets its kind's own name), its **Rect Transform**, then the
 components its type is built with, laid out like their own Inspectors.
 
 | Element | Components |
@@ -297,6 +298,49 @@ scripts and change them freely. Saving the panel again doesn't touch objects alr
 Unity's menus come from code, so the list is a generated script, `Editor/Generated/EasyUIPanelMenu.cs`. It
 is written again whenever a panel is saved, imported, renamed, moved or deleted, only when it changes, and
 removed when no panel is left. It belongs to your project, so the repository ignores it.
+
+## Converting a panel from the scene
+
+A panel laid out by hand under a canvas can be turned into an Easy UI panel. Add the **Easy UI Converter**
+component (Add Component > Easy UI) to its top object and press **Convert to Easy UI Data**:
+
+- the object becomes the panel's root and the canvas it is under gives the canvas size; every object under
+  it becomes an element of the kind its components say (Text, Image, Raw Image, Button, Toggle, Slider,
+  Dropdown, Input Field, Scroll View, otherwise Empty), placed where it is on the canvas, with its anchors,
+  pivot, the settings of its components and the optional components Easy UI has (Content Size Fitter,
+  Canvas Group, Horizontal / Vertical / Grid Layout Group, Layout Element, Mask, Rect Mask 2D).
+- the pieces of a Scroll View, Button, Toggle and Dropdown are matched to Easy UI's parts; a part the object
+  does not have is made the way Unity makes it. A role is read back from its component when that component
+  belongs to that role alone.
+- the **Easy UI Panel** field picks the asset to replace (after asking); left empty, the button asks where to
+  save, like Save. The panel is remembered on the component, so converting again updates the same asset.
+- **Roles are kept** when converting into an existing panel: the old design's roles go back to the elements with
+  the same name under the same parents (the root counts as the same; of several siblings with one name, the first
+  matches the first). Roles that found no element are listed in the console warning.
+- a **disabled graphic** (Image, Raw Image, Text) or one under an **inactive object** of the panel is made fully
+  transparent, since Easy UI has no enabled or active state; it keeps catching clicks if it did. (An inactive root
+  does not count.)
+- an **inactive object** is also marked **Ignore Layout** (Layout Element), so the layout group it sits in lays out
+  its siblings as the scene did, without it.
+- a **disabled** Layout Group, Content Size Fitter, Layout Element, Canvas Group, Mask or Rect Mask 2D does nothing in
+  the scene and is **not read**.
+- a **Button, Dropdown or Input Field without an Image** is converted with an invisible, non-raycast one (the built control
+  always has an Image); a Button or Toggle **without a label** gets no "Button" text (the label part stays empty).
+- a **Slider** keeps its five pieces - Background, Fill Area, Fill, Handle Slide Area, Handle - each with where it sits and the Image it
+  has (**Custom Look** in its Inspector); a piece the slider doesn't have is built transparent. An **Input Field** keeps the look of its
+  typed text and placeholder (**Custom Text Style**: font, size, colour, alignment...) and where the text area, the text and the
+  placeholder sit inside the field.
+- **Maskable** of an Image, Raw Image or Text is kept (and shown in the Inspector), and elements are built in the order the design has
+  them (a Button's label no longer jumps ahead of an icon placed before it).
+- a root named like the panel plus Unity's duplicate suffixes ("Panel (Copy) (1)") is left without a name of its own.
+- a Scroll View has a **Background** option (Unity's translucent root Image): read from the scene (an Image that is
+  missing, disabled, invisible or under an inactive object counts as none) and applied when the panel is built; off,
+  the Image is drawn transparent but stays, so the view can still be dragged.
+- what Easy UI cannot hold is left out and listed in one console warning: rotation and scale, anchors that
+  are not a preset, the inactive state itself, objects without a Rect Transform, the inside of a Slider or Input Field
+  (made again as Unity makes it), a Dropdown's template, legacy Text (becomes TextMeshPro, font not kept).
+
+The component does nothing at run time and is taken out of every build.
 
 ## Setup
 

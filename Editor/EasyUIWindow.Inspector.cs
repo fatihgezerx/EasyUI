@@ -144,6 +144,7 @@ namespace EasyUI
             GUILayout.Label(Subtitle(node), EditorStyles.miniLabel);
             DrawRoleRow(node);
             DrawPartsRow(node);
+            DrawNameRow(node);
 
             if (Section("Rect Transform", ref node.rectTransformOpen))
             {
@@ -216,6 +217,18 @@ namespace EasyUI
                 ? $"{EasyUIParts.DisplayName(node.part)} of {NameOf(EasyUIParts.OwnerOf(document, node))}"
                 : EasyUINode.DisplayName(node.type);
             return $"{kind}  -  layer {document.DepthOf(node)}";
+        }
+
+        // The element's name, changed when Enter is pressed or the field is left (a name typed on the canvas goes the same way).
+        private void DrawNameRow(EasyUINode node)
+        {
+            GUILayout.Space(4f);
+            EditorGUI.BeginChangeCheck();
+            var typed = EditorGUILayout.DelayedTextField(new GUIContent("Name", "What the object is called when the panel is built. Left empty, it gets its kind's own name."), NameOf(node));
+            if (EditorGUI.EndChangeCheck())
+            {
+                SetName(node, typed);
+            }
         }
 
         // What the element is to other systems (see EasyUIRoles.cs): its roles, one per line with a cross that takes
@@ -677,6 +690,7 @@ namespace EasyUI
             var scroll = node.scrollView;
             ToggleRow("Horizontal", ref scroll.horizontal);
             ToggleRow("Vertical", ref scroll.vertical);
+            ToggleRow("Background", ref scroll.background);
 
             scroll.movementType = (ScrollMovementType)EditorGUILayout.EnumPopup("Movement Type", scroll.movementType);
             GUILayout.Space(RowGap);
